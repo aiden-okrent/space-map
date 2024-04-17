@@ -4,7 +4,9 @@
 # when the package is imported
 # from <name>. import utils
 
+from .abstractDockWidget import AbstractDockWidget
+from .abstractWindow import AbstractWindow
+from .centralDisplayWidget import CentralDisplayWidget
 from .dialogs import ConfigMenuDialog
 from .mainWindow import MainWindow
-from .opengl_widgets import CubeView3D, EarthMapView3D, SphereView3D
-from .widgets import InfoWidget, LocationWidget, StatusButtonWidget, TimeWidget
+from .opengl_widgets import EarthMapView3D

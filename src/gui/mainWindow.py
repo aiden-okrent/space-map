@@ -1,36 +1,43 @@
 # pyqt6 main window, run by an external app
+import copy
 import json
 import os
 import time
 from datetime import datetime
 from turtle import right
 
-from PyQt6.QtCore import QDateTime, QPoint, QRect, QSize, Qt
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QDateTime, QPoint, QRect, QSize, Qt
+from PySide6.QtWidgets import (
     QApplication,
+    QCalendarWidget,
     QDateTimeEdit,
+    QDockWidget,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
+    QPlainTextDocumentLayout,
     QPushButton,
     QRadioButton,
     QSizePolicy,
     QSplitter,
+    QTabWidget,
+    QToolBar,
     QVBoxLayout,
     QWidget,
 )
-from skyfield.api import iers2010, load  # type: ignore
 
 import config
 import utils.JSONtoDictionary as JSONtoDictionary
 
+from .abstractDockWidget import AbstractDockWidget
 from .abstractWindow import AbstractWindow
+from .centralDisplayWidget import CentralDisplayWidget
 from .dialogs import ConfigMenuDialog, CustomDialog
-from .opengl_widgets import CubeView3D, EarthMapView3D, SphereView3D
-from .widgets import InfoWidget, TimeWidget
+from .opengl_widgets import EarthMapView3D
 
 
 class MainWindow(AbstractWindow):
@@ -38,54 +45,48 @@ class MainWindow(AbstractWindow):
         super().__init__()
 
         self.settingsGroup = "Main Window"
-        self.setWindowTitle("Main Window")
         self.initUI()
 
     def initUI(self):
 
-        centralWidget = QWidget()
-        self.setCentralWidget(centralWidget)
-        self.mainLayout = QHBoxLayout()
-        centralWidget.setLayout(self.mainLayout)
+        # self.centralDisplay = CentralDisplayWidget(self)
+        # self.setCentralWidget(self.centralDisplay)
 
-        # Column layouts
-        leftColumnLayout = QVBoxLayout()
-        centerColumnLayout = QVBoxLayout()
-        rightColumnLayout = QVBoxLayout()
+        quality = 0 # 0 = low, 1 = medium, 2 = high
+        self.centralDisplay = EarthMapView3D(self, quality)
+        self.setCentralWidget(self.centralDisplay)
 
-        # Add column layouts to the main horizontal layout
-        # With stretch factors to set the ratio 1:2
-        self.mainLayout.addLayout(leftColumnLayout, 1)
-        self.mainLayout.addLayout(rightColumnLayout, 2)
-
-        # 3D Cube view (Left Column)
-        self.cubeView = CubeView3D(self)
-        self.cubeView.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.cubeView.setMinimumSize(200, 200)
-        self.cubeView.setMaximumSize(200, 200)
-        leftColumnLayout.addWidget(self.cubeView)
-
-        # 3D Sphere View (also left Column)
-        self.sphereView = SphereView3D(self)
-        self.sphereView.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.sphereView.setMinimumSize(200, 200)
-        self.sphereView.setMaximumSize(200, 200)
-        leftColumnLayout.addWidget(self.sphereView)
-
-        # 3D Earth (right Column)
-        quality = 0 # 0: low, 1: medium, 2: high
-        self.earthMapView = EarthMapView3D(self, quality)
-        self.earthMapView.setMinimumSize(200, 200)
-        rightColumnLayout.addWidget(self.earthMapView)
-        leftColumnLayout.addWidget(self.earthMapView.scale_label)
-        leftColumnLayout.addWidget(self.earthMapView.cameraAltitude_label)
-        leftColumnLayout.addWidget(self.earthMapView.cameraPos_label)
+        # toolbar
+        self.toolBar = QToolBar("Toolbar")
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolBar)
+        self.toolBar.setMovable(False)
+        self.toolBar.setFloatable(False)
+        self.toolBar.addAction("Settings", self.openCustomDialog)
+        self.toolBar.addSeparator()
+        #self.toolBar.addAction("Set Quality", self.mainDisplay.setQuality)
 
 
-    def openConfigMenu(self):
-        dialog = ConfigMenuDialog(self)
-        dialog.exec()
+        # dockwidget left
+        self.dockWidget = AbstractDockWidget(self)
+        self.dockWidget.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+        self.dockWidget.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dockWidget)
+        #self.dockWidget.setWidget(QLabel("Dock Widget left"))
 
-    def testDialogOpen(self):
+        # dockwidget right
+        self.dockWidget2 = AbstractDockWidget(self)
+        self.dockWidget2.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+        self.dockWidget2.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dockWidget2)
+        self.dockWidget2.setWidget(QLabel("Dock Widget right"))
+
+        # dockwidget bottom
+        self.dockWidget3 = AbstractDockWidget(self)
+        self.dockWidget3.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+        self.dockWidget3.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.dockWidget3)
+        #self.dockWidget3.setWidget(QLabel("Dock Widget bottom"))
+
+    def openCustomDialog(self):
         dialog = CustomDialog(self)
         dialog.exec()

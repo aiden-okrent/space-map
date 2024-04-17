@@ -11,11 +11,11 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
 from PIL import Image
-from PyQt6 import QtCore
-from PyQt6.QtCore import QDate, QTime, QTimer
-from PyQt6.QtGui import QImage, QMouseEvent, QTransform
-from PyQt6.QtOpenGLWidgets import QOpenGLWidget
-from PyQt6.QtWidgets import (
+from PySide6 import QtCore
+from PySide6.QtCore import QDate, QTime, QTimer
+from PySide6.QtGui import QImage, QMouseEvent, QTransform
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtWidgets import (
     QDateEdit,
     QGroupBox,
     QHBoxLayout,
@@ -69,6 +69,10 @@ class EarthMapView3D(QOpenGLWidget):
 
 
         self.trackerService = TrackerService()
+
+    def setQuality(self, quality):
+        self.quality = quality
+        self.loadTextures(self.quality)
 
     def initializeGL(self):
         # This method is called once upon the first time OpenGL context is available
@@ -463,142 +467,3 @@ class EarthMapView3D(QOpenGLWidget):
             #self.drawSatelliteOrbit()
             self.updateLabels()
         glPopMatrix()
-
-
-class SphereView3D(QOpenGLWidget):
-    def __init__(self, parent=None):
-        super(SphereView3D, self).__init__(parent)
-        # You can initialize OpenGL context-related settings here if needed
-        self.angle = 0.0
-
-        # Create a QTimer
-        self.timer = QTimer()
-        # Connect the timer's timeout signal to the update method
-        self.timer.timeout.connect(self.update)
-        # Start the timer to trigger an update every 16 milliseconds
-        self.timer.start(16)
-
-
-    def initializeGL(self):
-        # This method is called once upon the first time OpenGL context is available
-        # Setup OpenGL state and resources
-        glEnable(GL_DEPTH_TEST)
-
-    def resizeGL(self, width, height):
-        # Update projection matrix on resize
-        glMatrixMode(GL_PROJECTION)
-        glLoadIdentity()
-        gluPerspective(45, width / float(height), 0.01, 100.0)
-        glMatrixMode(GL_MODELVIEW)
-
-    def paintGL(self):
-        # Clear the canvas and draw your scene
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glLoadIdentity()
-        gluLookAt(0, 0, -5, 0, 0, 0, 0, 1, 0)
-
-        glRotatef(self.angle, 1.0, 1.0, 1.0)  # Rotate by self.angle degrees around the axis (1,1,1)
-
-
-        # Draw the earth sphere
-        glColor3f(0.0, 0.0, 1.0)  # Blue
-        quadric = gluNewQuadric()
-        gluQuadricDrawStyle(quadric, GLU_FILL)
-        gluQuadricNormals(quadric, GLU_SMOOTH)
-        gluSphere(quadric, 1.0, 100, 100)
-
-        # Draw the equator
-        glLineWidth(3.0)  # Set line width to 3.0
-        glColor3f(1.0, 1.0, 1.0)  # White
-        glBegin(GL_LINE_LOOP)
-        for i in range(360):
-            theta = i * 3.14159 / 180
-            glVertex3f(cos(theta), 0, sin(theta))
-        glEnd()
-
-
-        self.angle = (self.angle + 1) % 360  # Increase the angle by 1 degree, and wrap around at 360
-class CubeView3D(QOpenGLWidget):
-    def __init__(self, parent=None):
-        super(CubeView3D, self).__init__(parent)
-        # You can initialize OpenGL context-related settings here if needed
-        self.angle = 0.0
-
-        # Create a QTimer
-        self.timer = QTimer()
-        # Connect the timer's timeout signal to the update method
-        self.timer.timeout.connect(self.update)
-        # Start the timer to trigger an update every 16 milliseconds
-        self.timer.start(16)
-
-
-    def initializeGL(self):
-        # This method is called once upon the first time OpenGL context is available
-        # Setup OpenGL state and resources
-        glEnable(GL_DEPTH_TEST)
-
-    def resizeGL(self, width, height):
-        # Update projection matrix on resize
-        glMatrixMode(GL_PROJECTION)
-        glLoadIdentity()
-        gluPerspective(45, width / float(height), 0.01, 100.0)
-        glMatrixMode(GL_MODELVIEW)
-
-    def paintGL(self):
-        # Clear the canvas and draw your scene
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glLoadIdentity()
-        gluLookAt(0, 0, -5, 0, 0, 0, 0, 1, 0)
-
-        glRotatef(self.angle, 1.0, 1.0, 1.0)  # Rotate by self.angle degrees around the axis (1,1,1)
-
-
-        # Draw the front face
-        glBegin(GL_LINE_LOOP)
-        glVertex3f(-1.0, -1.0, 1.0)
-        glVertex3f(1.0, -1.0, 1.0)
-        glVertex3f(1.0, 1.0, 1.0)
-        glVertex3f(-1.0, 1.0, 1.0)
-        glEnd()
-
-        # Draw the back face
-        glBegin(GL_LINE_LOOP)
-        glVertex3f(-1.0, -1.0, -1.0)
-        glVertex3f(1.0, -1.0, -1.0)
-        glVertex3f(1.0, 1.0, -1.0)
-        glVertex3f(-1.0, 1.0, -1.0)
-        glEnd()
-
-        # Draw the left face
-        glBegin(GL_LINE_LOOP)
-        glVertex3f(-1.0, -1.0, -1.0)
-        glVertex3f(-1.0, -1.0, 1.0)
-        glVertex3f(-1.0, 1.0, 1.0)
-        glVertex3f(-1.0, 1.0, -1.0)
-        glEnd()
-
-        # Draw the right face
-        glBegin(GL_LINE_LOOP)
-        glVertex3f(1.0, -1.0, -1.0)
-        glVertex3f(1.0, -1.0, 1.0)
-        glVertex3f(1.0, 1.0, 1.0)
-        glVertex3f(1.0, 1.0, -1.0)
-        glEnd()
-
-        # Draw the top face
-        glBegin(GL_LINE_LOOP)
-        glVertex3f(-1.0, 1.0, -1.0)
-        glVertex3f(-1.0, 1.0, 1.0)
-        glVertex3f(1.0, 1.0, 1.0)
-        glVertex3f(1.0, 1.0, -1.0)
-        glEnd()
-
-        # Draw the bottom face
-        glBegin(GL_LINE_LOOP)
-        glVertex3f(-1.0, -1.0, -1.0)
-        glVertex3f(-1.0, -1.0, 1.0)
-        glVertex3f(1.0, -1.0, 1.0)
-        glVertex3f(1.0, -1.0, -1.0)
-        glEnd()
-
-        self.angle = (self.angle + 1) % 360  # Increase the angle by 1 degree, and wrap around at 360
