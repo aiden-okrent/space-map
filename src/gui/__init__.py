@@ -6,7 +6,6 @@
 
 from .abstractDockWidget import AbstractDockWidget
 from .abstractWindow import AbstractWindow
-from .centralDisplayWidget import CentralDisplayWidget
-from .dialogs import ConfigMenuDialog
 from .mainWindow import MainWindow
+from .mapView3D import Map3DViewWidget
 from .opengl_widgets import EarthMapView3D
