@@ -154,26 +154,15 @@ class EarthMapView3D(QOpenGLWidget):
     def loadTextures(self, quality):
         if quality == 0:
             glShadeModel(GL_FLAT)
-            self.earth_daymap = self.loadTexture(imagePath=os.path.join(config.map_textures, "2k_earth_daymap.jpg"))
+            self.earth_daymap = self.loadTexture(imagePath=os.path.join(config.map_textures, "land_ocean_ice_2048.jpg"))
             self.earth_clouds = self.loadTexture(imagePath=os.path.join(config.map_textures, "2k_earth_clouds.jpg"))
-            self.earth_specular = self.loadTexture(imagePath=os.path.join(config.map_textures, "2k_earth_specular_map.tif"))
             self.stars_milky_way = self.loadTexture(imagePath=os.path.join(config.map_textures, "2k_stars_milky_way.jpg"))
-            self.earth_nightmap = self.loadTexture(imagePath=os.path.join(config.map_textures, "2k_earth_nightmap.jpg"))
 
         elif quality == 1:
             glShadeModel(GL_SMOOTH)
-            self.earth_daymap = self.loadTexture(imagePath=os.path.join(config.map_textures, "8k_earth_daymap.jpg"))
+            self.earth_daymap = self.loadTexture(imagePath=os.path.join(config.map_textures, "blue_marble_NASA_land_ocean_ice_8192.png"))
             self.earth_clouds = self.loadTexture(imagePath=os.path.join(config.map_textures, "8k_earth_clouds.jpg"))
             self.stars_milky_way = self.loadTexture(imagePath=os.path.join(config.map_textures, "8k_stars_milky_way.jpg"))
-            self.earth_nightmap = self.loadTexture(imagePath=os.path.join(config.map_textures, "8k_earth_nightmap.jpg"))
-
-        elif quality == 2:
-            glShadeModel(GL_SMOOTH)
-            self.earth_clouds = self.loadTexture(imagePath=os.path.join(config.map_textures, "clouds-alpha.png"))
-            self.earth_specular = self.loadTexture(imagePath=os.path.join(config.map_textures, "specular.jpg"))
-            self.earth_daymap = self.loadTexture(imagePath=os.path.join(config.map_textures, "land_ocean_ice_8192.png"))
-            self.stars_milky_way = self.loadTexture(imagePath=os.path.join(config.map_textures, "8k_stars_milky_way.jpg"))
-            self.earth_nightmap = self.loadTexture(imagePath=os.path.join(config.map_textures, "8k_earth_nightmap.jpg"))
 
     def loadTexture(self, imagePath):
         image = Image.open(imagePath)

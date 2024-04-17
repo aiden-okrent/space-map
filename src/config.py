@@ -12,7 +12,4 @@ ASSETS_DIR = script_dir / "assets"
 CONFIG_DIR = ASSETS_DIR / "config"
 stylesheet_path = CONFIG_DIR / "stylesheet.json"
 satellite_list_items_path = CONFIG_DIR / "satellite_query_category_types.json"
-map_textures = Path(__file__).resolve().parent / "assets" / "textures" / "solarsystemscope.com"
-
-earth_texture_path = script_dir / "assets" / "textures" / "nasa" / "blue_marble_NASA_land_ocean_ice_8192.png"
-star_texture_path = script_dir / "assets" / "textures" / "nasa" / "TychoSkymapII.t4_08192x04096.jpg"
+map_textures = Path(__file__).resolve().parent / "assets" / "textures"
