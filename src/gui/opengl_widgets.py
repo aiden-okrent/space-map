@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 from skyfield.api import load, wgs84
 
 import config
-from core.services.tracker_service import TrackerService
+from services.tracker_service import TrackerService
 
 
 class EarthMapView3D(QOpenGLWidget):

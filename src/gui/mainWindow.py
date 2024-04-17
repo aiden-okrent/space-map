@@ -30,7 +30,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import config
 import utils.JSONtoDictionary as JSONtoDictionary
 
 from .abstractDockWidget import AbstractDockWidget

@@ -26,7 +26,7 @@ class TrackerService:
         project_root = os.path.dirname(os.path.dirname(current_dir))
 
         json_file_path = os.path.join(
-            project_root, "assets", "config", "satellite_families.json"
+            project_root, "src", "satellite_families.json"
         )
 
         self.simtime = 0
@@ -193,7 +193,7 @@ class TrackerService:
 
     def fetch_or_use_local_tle(self, satellite_name, max_age_days=2):
         """Fetch new TLE data if the local file is older than max_age_days, otherwise use the local file."""
-        file_path = os.path.join('src/core/services/tle_cache', f"{satellite_name}.tle")
+        file_path = os.path.join('src/data/tle_cache', f"{satellite_name}.tle")
 
         def is_tle_fresh(file_path):
 
