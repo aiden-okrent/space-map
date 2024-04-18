@@ -19,12 +19,21 @@ class ApplicationController:
         self.Map3DView = Map3DView(self)
         self.MainView.setCentralWidget(self.Map3DView)
 
+        # a timescale is an abstraction representing a linear timeline independent from any constraints from human-made time standards
+        self.Timescale = load.timescale() # timescale from skyfield
+
     def run(self):
         self.MainView.restoreSettings()
 
     def button_clicked(self):
         sat = self.TLEManager.getSatellite("25544")
-        print(sat.name)
+
+        current_time = self.Timescale.now()
+
+        print(sat.latlon_at(current_time))
+
+
+
 
     def toggle_quality(self):
         # either 0 for low or 1 for high, so toggle between

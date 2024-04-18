@@ -497,6 +497,7 @@ The result should be a satellite object that behaves exactly as though it had be
 
 '''
 
+import datetime
 import os
 
 from skyfield.api import EarthSatellite, load
@@ -507,9 +508,33 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
     """Custom Satellite class to extend the Skyfield EarthSatellite class with metadata.
     """
     def __init__(self, catalog_id, line1, line2, name="Unnamed Satellite", metadata=None):
+        print("Satellite object created for: " + name, "Catalog ID: " + catalog_id)
         super().__init__(line1, line2, name)
         self.catalog_id = catalog_id
         self.metadata = metadata if metadata is not None else {}
+
+    def epoch_valid_at(self, time: datetime.datetime, margin: int = 14):
+        """Check if the Satellite's epoch is valid at a given time, default margin for validity is 2 weeks before and after the epoch.
+
+        Args:
+            time (_type_): The time to check the epoch validity for.
+            margin (int, optional): The number of days before and after the epoch to consider valid. Defaults to 14 (2 weeks).
+
+        Returns:
+            _Bool_: True if the time is within the margin of the epoch, False otherwise.
+        """
+        epoch = self.epoch.utc_datetime() # convert epoch to datetime in utc
+
+        time = time.astimezone(datetime.timezone.utc) # convert time to utc
+
+        # if time is before epoch margin
+        if time < epoch - datetime.timedelta(days=margin):
+            return False
+        # if time is after epoch margin
+        if time > epoch + datetime.timedelta(days=margin):
+            return False
+        return True
+
 
     def at(self, time):
         return super().at(time)
@@ -523,20 +548,22 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
         """
         self.metadata[key] = value
 
-    def xyz_at(self, time):
-        """Get the XYZ coordinates of the satellite at a given time. Uses the Earth model to convert lat/lon to XYZ.
+    def latlon_at(self, time):
+        """Convenient method to get the latitude, longitude, and elevation of the Satellite at a given time.
 
         Args:
-            time (_type_): The time to get the satellite's position at.
+            time (_type_): The time to calculate the position for.
 
         Returns:
-            tuple: The XYZ coordinates of the satellite.
+            tuple: Latitude, Longitude, Elevation in degrees, degrees, km.
         """
-        map_coordinates = self.at(time).subpoint()
-        lat = map_coordinates.latitude.degrees
-        lon = map_coordinates.longitude.degrees
-        alt = map_coordinates.elevation.km
-        return lat, lon, alt
+
+
+        subpoint = self.at(time).subpoint()
+        lat = subpoint.latitude.degrees
+        lon = subpoint.longitude.degrees
+        elevation = subpoint.elevation.km
+        return lat, lon, elevation
 
     def get_metadata(self, key):
         """Get metadata from the Satellite object.
@@ -570,6 +597,7 @@ class Earth():
             tuple: Latitude and Longitude in degrees.
         """
         return self.geoid.latlon(lat, lon, elevation)
+
 
 
 class TLEManager:
@@ -676,8 +704,14 @@ class TLEManager:
             self.download_tle(catalog_id)
             tle_data = self.read_tle(catalog_id)
 
-        if tle_data:
-            return Satellite(catalog_id, tle_data[0], tle_data[1], name=tle_data[0].strip())
+        satellite = Satellite(catalog_id, tle_data[1], tle_data[2], name=tle_data[0].strip())
+        if satellite:
+            if not satellite.epoch_valid_at(datetime.datetime.now(), margin=14):
+                print("Epoch not valid for catalog_id: " + catalog_id, "with margin: " + str(14))
+                self.download_tle(catalog_id)
+                tle_data = self.read_tle(catalog_id)
+                satellite = Satellite(catalog_id, tle_data[1], tle_data[2], name=tle_data[0].strip())
+            return satellite
 
 class Observer():
     """Observer class for calculating satellite visibility from a given location.
