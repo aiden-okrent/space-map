@@ -30,10 +30,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import utils.JSONtoDictionary as JSONtoDictionary
-
 from .abstractDockWidget import AbstractDockWidget
 from .abstractWindow import AbstractWindow
+from .JSONtoDictionary import JSONtoDictionary
 from .mapView3D import Map3DViewWidget
 from .opengl_widgets import EarthMapView3D
 from .settingsDialogs import QualityDialog
