@@ -499,6 +499,7 @@ The result should be a satellite object that behaves exactly as though it had be
 
 import datetime
 import os
+from math import cos, radians, sin
 
 from skyfield.api import EarthSatellite, load
 from skyfield.toposlib import Geoid
@@ -585,18 +586,15 @@ class Earth():
         super().__init__()
         self.geoid = Geoid('WGS84', 6378137.0, 298.257223563) # WGS84 Geoid
 
-    def latlon_to_xyz(self, lat, lon, elevation):
-        """Calculate the latitude and longitude of a point on the Earth's surface from geocentric coordinates.
+    def point_to_translation(self, point):
+        theta = point.longitude.degrees
+        phi = point.latitude.degrees
 
-        Args:
-            lat (float): Latitude in radians.
-            lon (float): Longitude in radians.
-            elevation (float): Elevation in meters.
+        elevation = self.geoid.radius.km + point.elevation.km
 
-        Returns:
-            tuple: Latitude and Longitude in degrees.
-        """
-        return self.geoid.latlon(lat, lon, elevation)
+        translation = [elevation * cos(radians(phi)) * cos(radians(theta)), elevation * cos(radians(phi)) * sin(radians(theta)), elevation * sin(radians(phi))]
+        return translation
+
 
 
 
