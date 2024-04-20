@@ -151,36 +151,6 @@ class EarthMapView3D(QOpenGLWidget):
 
         self.updateCamera(0, 0, self.cameraAltitude)
 
-    def loadTextures(self, quality):
-        if quality == 0:
-            glShadeModel(GL_FLAT)
-            self.earth_daymap = self.loadTexture(imagePath=os.path.join(config.map_textures, "land_ocean_ice_2048.jpg"))
-            self.earth_clouds = self.loadTexture(imagePath=os.path.join(config.map_textures, "2k_earth_clouds.jpg"))
-            self.stars_milky_way = self.loadTexture(imagePath=os.path.join(config.map_textures, "2k_stars_milky_way.jpg"))
-
-        elif quality == 1:
-            glShadeModel(GL_SMOOTH)
-            self.earth_daymap = self.loadTexture(imagePath=os.path.join(config.map_textures, "blue_marble_NASA_land_ocean_ice_8192.png"))
-            self.earth_clouds = self.loadTexture(imagePath=os.path.join(config.map_textures, "8k_earth_clouds.jpg"))
-            self.stars_milky_way = self.loadTexture(imagePath=os.path.join(config.map_textures, "8k_stars_milky_way.jpg"))
-
-    def loadTexture(self, imagePath):
-        image = Image.open(imagePath)
-        image = image.transpose(Image.Transpose.FLIP_TOP_BOTTOM)  # Flip the image
-        imageData = np.array(list(image.getdata()), np.uint8)  # Convert to numpy array
-
-        # Generate a texture ID
-        textureID = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, textureID)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-
-        # Upload the texture data
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.width, image.height, 0, GL_RGB, GL_UNSIGNED_BYTE, imageData)
-        return textureID
-
     # code enabling the camera to be rotated around the earth via mouse dragging on the screen
     def updateCamera(self, theta, phi, cameraAltitude):
         # clamp camera looking up or down too far
@@ -254,6 +224,37 @@ class EarthMapView3D(QOpenGLWidget):
         self.cameraAltitude = min(self.cameraAltitude, self.maxCameraAltitude)
 
         self.updateCamera(self.theta, self.phi, self.cameraAltitude)
+
+
+    def loadTextures(self, quality):
+        if quality == 0:
+            glShadeModel(GL_FLAT)
+            self.earth_daymap = self.loadTexture(imagePath=os.path.join(config.map_textures, "land_ocean_ice_2048.jpg"))
+            self.earth_clouds = self.loadTexture(imagePath=os.path.join(config.map_textures, "2k_earth_clouds.jpg"))
+            self.stars_milky_way = self.loadTexture(imagePath=os.path.join(config.map_textures, "2k_stars_milky_way.jpg"))
+
+        elif quality == 1:
+            glShadeModel(GL_SMOOTH)
+            self.earth_daymap = self.loadTexture(imagePath=os.path.join(config.map_textures, "blue_marble_NASA_land_ocean_ice_8192.png"))
+            self.earth_clouds = self.loadTexture(imagePath=os.path.join(config.map_textures, "8k_earth_clouds.jpg"))
+            self.stars_milky_way = self.loadTexture(imagePath=os.path.join(config.map_textures, "8k_stars_milky_way.jpg"))
+
+    def loadTexture(self, imagePath):
+        image = Image.open(imagePath)
+        image = image.transpose(Image.Transpose.FLIP_TOP_BOTTOM)  # Flip the image
+        imageData = np.array(list(image.getdata()), np.uint8)  # Convert to numpy array
+
+        # Generate a texture ID
+        textureID = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, textureID)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+
+        # Upload the texture data
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.width, image.height, 0, GL_RGB, GL_UNSIGNED_BYTE, imageData)
+        return textureID
 
     def resizeGL(self, width, height):
         # Update projection matrix on resize
@@ -382,7 +383,10 @@ class EarthMapView3D(QOpenGLWidget):
     def drawSatelliteOrbit(self):
         if not self.translations:
             self.translations = self.calcSatelliteOrbit("ISS (ZARYA)")
-
+        #glPointSize(5)
+        #glBegin(GL_POINTS)
+        #glVertex3f(0, 0, 0)
+        #glEnd()
         glDisable(GL_LIGHTING)
         glPushMatrix()
         glLineWidth(2.0)

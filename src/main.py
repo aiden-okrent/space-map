@@ -6,23 +6,18 @@ from PySide6.QtWidgets import QApplication
 
 from controller import ApplicationController
 
-# dark mode for windows 11
-sys.argv += ['-platform', 'windows:darkmode=2']
 
 # runtime
 def main():
     QCoreApplication.setOrganizationName("MisterBluSky")
     QCoreApplication.setOrganizationDomain("misterblusky.com")
     QCoreApplication.setApplicationName("space-map")
+    sys.argv += ['-platform', 'windows:darkmode=2'] # dark mode for windows 11
     app = QApplication(sys.argv)
-
-    app.setStyle('Fusion')
+    app.setStyle('Fusion') # set style to Fusion
 
     appController = ApplicationController()
     appController.run()
-
-    #widget = MainWindow()
-    #widget.restoreSettings()
 
     sys.exit(app.exec())
 

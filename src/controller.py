@@ -11,34 +11,30 @@ from view import Globe3DView, MainView
 
 class ApplicationController:
     def __init__(self):
-        self.Earth = Earth(self)
-        self.TLEManager = TLEManager(self)
-        self.MainView = MainView(self)
-
-        self.Globe3DView = Globe3DView(self)
-        #self.Globe3DView.setQuality(self.Globe3DView.RenderQuality.LOW)
-        #self.Globe3DView.setScene(self.Globe3DView.SceneView.GLOBE_VIEW)
-
+        # app variables
+        self.scale = 1/1000 # scale of the earth model
         self.current_satellite = None # current satellite being tracked
+        self.Timescale = load.timescale() # a timescale is an abstraction representing a linear timeline independent from any constraints from human-made time standards
 
+        # models
+        self.Earth = Earth(self, self.scale)
+        self.TLEManager = TLEManager(self)
 
+        # views
+        self.MainView = MainView(self)
+        self.Globe3DView = Globe3DView(self)
         self.MainView.setCentralWidget(self.Globe3DView)
-
-        # a timescale is an abstraction representing a linear timeline independent from any constraints from human-made time standards
-        self.Timescale = load.timescale() # timescale from skyfield
 
     def run(self):
         self.MainView.restoreSettings()
-        self.refresh_toolbar_actions_text()
-
+        self.Globe3DView.run()
 
     def show_ISS_button_clicked(self):
         sat = self.TLEManager.getSatellite("25544")
-        self.set_current_satellite(sat)
-        self.Globe3DView.setScene(self.Globe3DView.SceneView.SATELLITE_TRACKING_VIEW)
-        self.refresh_toolbar_actions_text()
+        self.setCurrentSatellite(sat)
+        self.Globe3DView.setScene(self.Globe3DView.SceneView.TRACKING_VIEW)
 
-    def set_current_satellite(self, satellite: Satellite):
+    def setCurrentSatellite(self, satellite: Satellite):
         self.current_satellite = satellite
 
     def get_current_satellite_translation(self):
@@ -46,15 +42,13 @@ class ApplicationController:
             return None
         current_time = self.Timescale.now()
         lat, lon, elv = self.current_satellite.latlon_at(current_time)
-        point = self.Earth.geoid.latlon(lat, lon, elv)
+        point = self.Earth.latlon(lat, lon, elv)
         translation = self.Earth.point_to_translation(point)
+        #print(translation)
         return translation
 
 
-    def refresh_toolbar_actions_text(self):
-        self.MainView.setQualityText(self.Globe3DView.getQuality())
-        self.MainView.setSceneText(self.Globe3DView.current_scene)
-
+    # view toggles
     def toggle_quality(self):
         # either 0 for low or 1 for high, so toggle between
         RenderQuality = self.Globe3DView.RenderQuality
@@ -64,17 +58,14 @@ class ApplicationController:
         else:
             quality = RenderQuality.LOW
         self.Globe3DView.setQuality(quality)
-        self.refresh_toolbar_actions_text()
-
 
     def toggle_scene(self):
         scene = self.Globe3DView.current_scene
         if scene == self.Globe3DView.SceneView.GLOBE_VIEW:
-            scene = self.Globe3DView.SceneView.SATELLITE_TRACKING_VIEW
-        elif scene == self.Globe3DView.SceneView.SATELLITE_TRACKING_VIEW:
-            scene = self.Globe3DView.SceneView.SATELLITES_EXPLORE_VIEW
+            scene = self.Globe3DView.SceneView.TRACKING_VIEW
+        elif scene == self.Globe3DView.SceneView.TRACKING_VIEW:
+            scene = self.Globe3DView.SceneView.EXPLORE_VIEW
         else:
             scene = self.Globe3DView.SceneView.GLOBE_VIEW
 
         self.Globe3DView.setScene(scene)
-        self.refresh_toolbar_actions_text()
