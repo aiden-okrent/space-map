@@ -339,7 +339,7 @@ The result should be a satellite object that behaves exactly as though it had be
 
 
 class Satellite(EarthSatellite): # Inherit from EarthSatellite
-    """Custom Satellite class to extend the Skyfield EarthSatellite class with metadata.
+    """Custom Satellite class to extend the Skyfield EarthSatellite class with additional functionality.
     """
     def __init__(self, controller, catalog_id, line1, line2, name="Unnamed Satellite", metadata=None):
         print("Satellite object created for: " + name, "Catalog ID: " + catalog_id)
@@ -356,7 +356,7 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
             margin (int, optional): The number of days before and after the epoch to consider valid. Defaults to 14 (2 weeks).
 
         Returns:
-            _Bool_: True if the time is within the margin of the epoch, False otherwise.
+            bool: True if the time is within the margin of the epoch, False otherwise.
         """
         epoch = self.epoch.utc_datetime() # convert epoch to datetime in utc
 
@@ -371,7 +371,11 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
         return True
 
     def calc_sat_position(self):
-        """ Calculate the ECEF position of the satellite. """
+        """Calculate the current position of the satellite.
+
+        Returns:
+            Tuple: A tuple containing the latitude, longitude, and elevation of the satellite in degrees and kilometers.
+        """
         time = self.controller.Timescale.now()  # Current time
         icrf = self.at(time)
         subpoint = self.controller.Earth.subpoint(icrf)
@@ -383,8 +387,15 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
         return lat, lon, elevation_km
 
     def calculate_satellite_orientation(self, position, satellite):
+        """Calculate the orientation of the satellite based on its position. Right now, it just points the satallite's downward vector towards the Earth.
 
+        Args:
+            position (np.array): The position of the satellite in ECEF coordinates.
+            satellite (Satellite): The satellite object.
 
+        Returns:
+            np.array, float: The rotation axis and angle for the satellite.
+        """
         direction = -position
         norm_direction = np.linalg.norm(direction)
         if norm_direction != 0:
@@ -422,7 +433,7 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
 
 
 class Earth(Geoid):
-    """Earth object extending the Skyfield Geoid class to provide additional functionality. WGS84 Earth parameters are used.
+    """Earth object extending the Skyfield Geoid class to provide additional functionality. Standard WGS84 Earth parameters are used at a given scale.
     """
     def __init__(self, controller, scale: int):
         super().__init__('WGS84', 6378137.0 * scale, 298.257223563) # WGS84 Earth parameters
@@ -430,6 +441,16 @@ class Earth(Geoid):
         self.scale = scale
 
     def geodetic_to_ecef(self, lat, lon, elevation):
+        """Convert geodetic coordinates to ECEF coordinates.
+
+        Args:
+            lat (float): Latitude in degrees.
+            lon  (float): Longitude in degrees.
+            elevation (float): Elevation in kilometers.
+
+        Returns:
+            np.array: The ECEF coordinates in X, Y, Z format, in kilometers.
+        """
         a = self.controller.Earth.radius.km  # Earth's radius in km before scaling 6378.137
         f = 1 / self.inverse_flattening
         e_sq = 2 * f - f * f  # Eccentricity squared
@@ -447,124 +468,130 @@ class Earth(Geoid):
         y = (scaled_N + scaled_h) * cos(lat) * sin(lon)
         z = (scaled_N + scaled_h) * sin(lat)
 
-        print(f"Scaled Earth Radius at Latitude (N): {scaled_N} km")
-        print(f"Scaled Elevation (h): {scaled_h} km")
-        print(f"Satellite Position - X: {x} km, Y: {y} km, Z: {z} km")
+        #print(f"Scaled Earth Radius at Latitude (N): {scaled_N} km")
+        #print(f"Scaled Elevation (h): {scaled_h} km")
+        #print(f"Satellite Position - X: {x} km, Y: {y} km, Z: {z} km")
         return np.array([x, y, z])
 
 
 class TLEManager:
-    """Manages TLE orbital data; Reading from file, validating Epoch, requesting new data from Celestrak, and building Satellite objects.
+    """Manages TLE orbital data; Reading from .TLE files, validating Epoch, requesting new data from Celestrak, and building Satellite objects.
     """
-    def __init__(self, controller, tle_data_dir: str = "src/data/tle_data"):
+    def __init__(self, controller, tle_dir: str = "src/data/tle_data"):
         super().__init__()
         self.controller = controller
-        self.tle_data_dir = tle_data_dir
-        if not os.path.exists(self.tle_data_dir):
-            os.makedirs(self.tle_data_dir)
+        self.tle_dir = tle_dir
+        if not os.path.exists(self.tle_dir):
+            os.makedirs(self.tle_dir)
 
-    def find_tle_file(self, catalog_id: str):
-        """Find the TLE file for the given Catalog ID in the TLE data directory.
+    def path_from_ID(self, catalog_id: str):
+        """Get the path to the TLE file for a given Catalog ID.
 
         Args:
-            catalog_id (str): The Catalog ID of the satellite. Max length 24 characters.
+            catalog_id (str): The Catalog ID of the satellite.
 
         Raises:
-            FileNotFoundError: If the TLE file is not found, raise an error.
+            ValueError: If no Catalog ID is provided.
 
         Returns:
             str: The path to the TLE file.
         """
-        for filename in os.listdir(self.tle_data_dir):
-            if catalog_id in filename:
-                return os.path.join(self.tle_data_dir, filename)
-        print("TLE file not found for catalog_id: " + catalog_id)
-        return None
-
-    def tle_exists(self, catalog_id: str):
-        """Check if a TLE file exists for the given Catalog ID.
-
-        Args:
-            catalog_id (str): The Catalog ID of the satellite. Max length 24 characters.
-
-        Returns:
-            _Bool_: True if the TLE file exists, False otherwise.
-        """
-        path = self.find_tle_file(catalog_id)
-        if path is not None:
-            if os.path.exists(path):
-                return True
-            else:
-                return False
-        else:
-            return False
-
-    def read_tle(self, catalog_id: str):
-        """Read TLE data from a file for the given Catalog ID.
-
-        Args:
-            catalog_id (str): The Catalog ID of the satellite. Max length 24 characters.
-
-        Returns:
-            list[str]: A list of TLE lines.
-        """
-        path = self.find_tle_file(catalog_id)
-        if self.tle_exists(catalog_id):
-            with open(path, 'r') as file:
-                lines = file.readlines()
-                return lines
-        else:
+        if catalog_id:
+            for filename in os.listdir(self.tle_dir):
+                if catalog_id in filename:
+                    return os.path.join(self.tle_dir, filename)
             return None
+        else:
+            raise ValueError("No CatalogID provided.")
 
-    def download_tle(self, catalog_id: str):
-        """Download a TLE file for the given Catalog ID from Celestrak and save it to the TLE data directory.
+    def open_tle_file(self, path: str):
+        """Open a TLE file and return the data.
 
         Args:
-            catalog_id (str): The Catalog ID of the satellite. Max length 24 characters.
+            path (str): The path to the TLE file.
 
         Raises:
-            FileNotFoundError: If the TLE file is not found after downloading, raise an error.
+            ValueError: If no TLE path is provided.
 
         Returns:
-            None
+            list: The TLE data as a list of strings for each line.
         """
+        if path:
+            with open(path, 'r') as file:
+                tle_data = file.readlines()
+                return tle_data
+        else:
+            raise ValueError("No TLE path provided.")
 
+    def download_tle(self, catalog_id: str):
+        """Download TLE data from Celestrak for a given Catalog ID.
+
+        Args:
+            catalog_id (str): The Catalog ID of the satellite.
+
+        Raises:
+            FileNotFoundError: If the TLE file is not found after downloading.
+            ValueError: If no TLE data is found for the Catalog ID.
+            ValueError: If no satellite is found in the Celestrak database for the Catalog ID.
+
+        Returns:
+            list: The TLE data as a list of strings for each line.
+        """
         if not catalog_id:
             return None
         url = "https://celestrak.org/NORAD/elements/gp.php?CATNR=" + catalog_id + "&FORMAT=TLE"
         load.tle_file(url, reload=True, filename=os.path.join("src/data/tle_data", catalog_id + ".tle"))
 
-        if not self.tle_exists(catalog_id):
+        path = self.path_from_ID(catalog_id)
+        if not path:
             raise FileNotFoundError("Attempted to download TLE file for catalog_id: " + catalog_id + " but resulting file was not found.")
+        else:
+            tle_data = self.open_tle_file(path)
+            if not tle_data:
+                raise ValueError("No TLE data found for catalog_id: " + catalog_id, "in path: " + path)
+            else:
+                if "No GP data found" in tle_data:
+                    os.remove(path)
+                    raise ValueError("No satellite with matching catalog_id: " + catalog_id, "found in Celestrak database.")
+                else:
+                    return tle_data
 
     def getSatellite(self, catalog_id: str):
-        """Get a Satellite object for the given Catalog ID.
+        """Get a Satellite object for a given Catalog ID.
 
         Args:
-            catalog_id (str): The Catalog ID of the satellite. Max length 24 characters.
+            catalog_id (str): The Catalog ID of the satellite.
 
         Raises:
-            ValueError: If the catalog_id is invalid, raise an error.
+            ValueError: If no catalog_id is provided.
+            ValueError: If no TLE file is found for the catalog_id.
+            ValueError: If reading the TLE data returned None.
 
         Returns:
-            Satellite: A custom Satellite object.
+            Satellite: The Satellite object.
         """
         if not catalog_id:
-            raise ValueError("Invalid catalog_id")
+            raise ValueError("No catalog_id provided.")
 
-        tle_data = self.read_tle(catalog_id)
-        if not tle_data:
-            self.download_tle(catalog_id)
-            tle_data = self.read_tle(catalog_id)
+        path = self.path_from_ID(catalog_id)
+        if not path:
+            print("No existing TLE file found for catalog_id: " + catalog_id, "downloading new TLE file from Celestrak database.")
+            tle_data = self.download_tle(catalog_id)
+            path = self.path_from_ID(catalog_id)
+        else:
+            tle_data = self.open_tle_file(path)
 
-        satellite = Satellite(self.controller, catalog_id, tle_data[1], tle_data[2], name=tle_data[0].strip())
-        if satellite:
+        if not tle_data == None:
+            satellite = Satellite(self.controller, catalog_id, tle_data[1], tle_data[2], name=tle_data[0].strip())
+            if not satellite:
+                raise ValueError("Failed to build Satellite object for catalog_id: " + catalog_id, "with TLE data: " + tle_data)
             if not satellite.epoch_valid_at(datetime.datetime.now(), margin=14):
-                print("Epoch not valid for catalog_id: " + catalog_id, "with margin: " + str(14))
-                self.download_tle(catalog_id)
-                tle_data = self.read_tle(catalog_id)
+                print("Epoch is invalid for satellite with catalog ID: " + catalog_id, "within a margin of " + str(14), "days. Requesting fresh TLE data.")
+                tle_data = self.download_tle(catalog_id)
                 satellite = Satellite(self.controller, catalog_id, tle_data[1], tle_data[2], name=tle_data[0].strip())
             return satellite
+        else:
+            raise ValueError("Failed to build Satellite object for catalog_id: " + catalog_id, "because the TLE data returned None.")
 
 class Observer():
     """Observer class for calculating satellite visibility from a given location.
