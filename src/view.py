@@ -1,6 +1,5 @@
 import os
 from math import cos, radians, sin, sqrt
-from pdb import run
 
 import numpy as np
 from OpenGL.GL import *
@@ -134,6 +133,9 @@ class Globe3DView(QOpenGLWidget):
         self.runtime = QTimer(self)
         self.runtime.timeout.connect(self.update) # run 'onRuntime' when timer ends
 
+        self.satellite_position = None
+        self.frame_count = 0
+
     def run(self):
         self.runtime.start(16) # 60fps
 
@@ -185,49 +187,19 @@ class Globe3DView(QOpenGLWidget):
     def drawScene_TRACKING_VIEW(self):
         self.camera.setCameraMode(self.camera.CameraMode.FOLLOW)
         satellite = self.controller.current_satellite # get the current satellite object to track
-        satellite_position = self.calc_sat_position(satellite)
+        lat, lon, elevation_km = satellite.calc_sat_position()
 
-        self.camera.update(satellite_position)
+        if self.satellite_position is None:
+            self.satellite_position = self.controller.Earth.geodetic_to_ecef(lat, lon, elevation_km)
+        else:
+            if self.frame_count % 3 == 0:
+                self.satellite_position = self.controller.Earth.geodetic_to_ecef(lat, lon, elevation_km)
+
+        self.frame_count += 1
+
+        self.camera.update(self.satellite_position)
         self.drawEarth()
-        self.drawSatellite(satellite_position, satellite)
-
-
-
-    def calc_sat_position(self, satellite):
-        """ Calculate the ECEF position of the satellite. """
-        time = self.controller.Timescale.now()  # Current time
-        icrf = satellite.at(time)
-        subpoint = self.controller.Earth.subpoint(icrf)
-
-        lat = subpoint.latitude.degrees
-        lon = subpoint.longitude.degrees
-        elevation_km = subpoint.elevation.km
-
-        # Conversion to ECEF coordinates
-        return self.geodetic_to_ecef(lat, lon, elevation_km)
-
-    def geodetic_to_ecef(self, lat, lon, elevation):
-        a = 6371 # self.controller.Earth.radius.km  # Earth's radius in km before scaling
-        f = 1 / self.controller.Earth.inverse_flattening
-        e_sq = 2 * f - f * f  # Eccentricity squared
-
-        scale = self.controller.scale  # 1/1000 scale
-
-        lat = radians(lat)
-        lon = radians(lon)
-        # Corrected radius at latitude
-        N = a / sqrt(1 - e_sq * sin(lat)**2)
-        scaled_N = N * scale  # This should be close to 6.388 if latitude is near equator
-        scaled_h = elevation * scale  # Scale the elevation to match the model scale
-
-        x = (scaled_N + scaled_h) * cos(lat) * cos(lon)
-        y = (scaled_N + scaled_h) * cos(lat) * sin(lon)
-        z = (scaled_N + scaled_h) * sin(lat)
-
-        print(f"Scaled Earth Radius at Latitude (N): {scaled_N} km")
-        print(f"Scaled Elevation (h): {scaled_h} km")
-        print(f"Satellite Position - X: {x} km, Y: {y} km, Z: {z} km")
-        return np.array([x, y, z])
+        self.drawSatellite(self.satellite_position, satellite)
 
     def drawSatellite(self, position, satellite):
         """ Draw the satellite at the given position. """
@@ -237,20 +209,10 @@ class Globe3DView(QOpenGLWidget):
 
         glPushMatrix()
         glTranslatef(*position)
-        # Calculate direction vector to Earth's origin (assuming Earth is at the origin)
-        direction = -position
-        norm_direction = np.linalg.norm(direction)
-        if norm_direction != 0:
-            direction /= norm_direction
 
-        # Assume the satellite's default forward vector is along the z-axis
-        forward = np.array([0, 0, 1])
-
-        # Calculate rotation axis and angle
-        rotation_axis = np.cross(forward, direction)
-        rotation_angle = np.arccos(np.dot(forward, direction)) * (180.0 / np.pi)  # Convert to degrees
-
+        rotation_axis, rotation_angle = satellite.calculate_satellite_orientation(position, satellite)
         # Apply rotation if necessary
+        print(rotation_axis, rotation_angle)
         if np.linalg.norm(rotation_axis) != 0:
             rotation_axis /= np.linalg.norm(rotation_axis)
             glRotatef(rotation_angle, *rotation_axis)
@@ -258,8 +220,16 @@ class Globe3DView(QOpenGLWidget):
         # Draw satellite (assuming a simple sphere for this example)
         quadric = gluNewQuadric()
         gluQuadricTexture(quadric, GL_FALSE)
-        gluSphere(quadric, 0.1, 16, 16)  # Scale to appropriate size for your model
+        gluSphere(quadric, 0.05, self.earth_triangles, self.earth_triangles)
         glPopMatrix()
+
+
+        #draw a straight line that points to the center of the earth
+        glBegin(GL_LINES)
+        glColor(1.0, 1.0, 1.0, .8)
+        glVertex3f(*position)
+        glVertex3f(0, 0, 0)
+        glEnd()
 
         # reset color, lighting, and matrix
         #glEnable(GL_LIGHTING)
@@ -397,8 +367,8 @@ class Globe3DView(QOpenGLWidget):
                 gluLookAt(-40, 0, 0, 0, 0, 0, 0, 0, -1)  # Look at the origin from a distance
             elif self.mode == self.CameraMode.FOLLOW:
                 # In FOLLOW mode, assume the camera is set to be slightly above and behind the target
-                radial_offset = self.controller.Earth.radius.km * 0.2
-                offset = np.array([-radial_offset,radial_offset, radial_offset])
+                radial_offset = self.controller.Earth.radius.km * .15
+                offset = -np.array([-radial_offset,radial_offset, radial_offset])
                 camera_position = self.target_position + offset
                 # Look at the target from the current camera position
                 gluLookAt(camera_position[0], camera_position[1], camera_position[2],

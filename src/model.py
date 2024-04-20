@@ -1,7 +1,8 @@
 import datetime
 import os
-from math import cos, radians, sin
+from math import cos, radians, sin, sqrt
 
+import numpy as np
 from skyfield.api import EarthSatellite, load, wgs84
 from skyfield.toposlib import Geoid
 
@@ -369,21 +370,35 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
             return False
         return True
 
+    def calc_sat_position(self):
+        """ Calculate the ECEF position of the satellite. """
+        time = self.controller.Timescale.now()  # Current time
+        icrf = self.at(time)
+        subpoint = self.controller.Earth.subpoint(icrf)
 
-    def latlon_at(self, time):
-        """Convenient method to get the latitude, longitude, and elevation of the Satellite at a given time.
-
-        Args:
-            time (_type_): The time to calculate the position for.
-
-        Returns:
-            tuple: Latitude, Longitude, Elevation in degrees, degrees, km.
-        """
-        subpoint = self.at(time).subpoint()
         lat = subpoint.latitude.degrees
         lon = subpoint.longitude.degrees
-        elevation = subpoint.elevation.km
-        return lat, lon, elevation
+        elevation_km = subpoint.elevation.km
+
+        return lat, lon, elevation_km
+
+    def calculate_satellite_orientation(self, position, satellite):
+
+
+        direction = -position
+        norm_direction = np.linalg.norm(direction)
+        if norm_direction != 0:
+            direction /= norm_direction
+
+        # Assume the satellite's default forward vector is along the z-axis
+        forward = np.array([0, 0, 1])
+
+        # Calculate rotation axis and angle
+        rotation_axis = np.cross(forward, direction)
+        rotation_angle = np.arccos(np.dot(forward, direction)) * (180.0 / np.pi)  # Convert to degrees
+
+        return rotation_axis, rotation_angle
+
 
     def add_metadata(self, key, value):
         """Add metadata to the Satellite object.
@@ -414,16 +429,28 @@ class Earth(Geoid):
         self.controller = controller
         self.scale = scale
 
-    def point_to_translation(self, point):
-        theta = point.longitude.degrees
-        phi = point.latitude.degrees
+    def geodetic_to_ecef(self, lat, lon, elevation):
+        a = self.controller.Earth.radius.km  # Earth's radius in km before scaling 6378.137
+        f = 1 / self.inverse_flattening
+        e_sq = 2 * f - f * f  # Eccentricity squared
 
-        elevation = self.radius.km + point.elevation.km
+        scale = self.scale  # 1/1000 scale
 
-        translation = [elevation * cos(radians(phi)) * cos(radians(theta)), elevation * cos(radians(phi)) * sin(radians(theta)), elevation * sin(radians(phi))]
-        return translation
+        lat = radians(lat)
+        lon = radians(lon)
+        # Corrected radius at latitude
+        N = a / sqrt(1 - e_sq * sin(lat)**2)
+        scaled_N = N * scale  # This should be close to 6.388 if latitude is near equator
+        scaled_h = elevation * scale  # Scale the elevation to match the model scale
 
+        x = (scaled_N + scaled_h) * cos(lat) * cos(lon)
+        y = (scaled_N + scaled_h) * cos(lat) * sin(lon)
+        z = (scaled_N + scaled_h) * sin(lat)
 
+        print(f"Scaled Earth Radius at Latitude (N): {scaled_N} km")
+        print(f"Scaled Elevation (h): {scaled_h} km")
+        print(f"Satellite Position - X: {x} km, Y: {y} km, Z: {z} km")
+        return np.array([x, y, z])
 
 
 class TLEManager:
