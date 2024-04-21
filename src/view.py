@@ -1,5 +1,5 @@
 import os
-from math import cos, radians, sin, sqrt
+from math import cos, e, radians, sin, sqrt
 
 import numpy as np
 from OpenGL.GL import *
@@ -32,11 +32,15 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
 )
+from PySide6.QtGui import QFont, QIntValidator
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QApplication,
     QCalendarWidget,
+    QComboBox,
     QDateTimeEdit,
     QDockWidget,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -45,10 +49,13 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QPlainTextDocumentLayout,
+    QProxyStyle,
     QPushButton,
     QRadioButton,
     QSizePolicy,
+    QSpinBox,
     QSplitter,
+    QStyle,
     QTabWidget,
     QToolBar,
     QVBoxLayout,
@@ -111,13 +118,76 @@ class MainView(AbstractWindow):
         self.initUI()
 
     def initUI(self):
-        # toolbar
-        self.toolBar = QToolBar("Toolbar")
-        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolBar)
+        # topBar
+        self.topBar = QToolBar()
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.topBar)
+        self.topBar.addSeparator()
 
-        self.show_ISS_button = self.toolBar.addAction("Show ISS", self.controller.show_ISS_button_clicked)
-        self.quality_Action = self.toolBar.addAction("Quality: ", self.controller.toggle_quality)
-        self.currentScene_Action = self.toolBar.addAction("Current Scene: ", self.controller.toggle_scene)
+        # Setup the main widget and layout for the satellite input
+        self.current_sat_input = QWidget()
+        self.current_sat_input_layout = QHBoxLayout()
+        self.current_sat_input_layout.setContentsMargins(0, 0, 0, 0)
+        self.current_sat_input.setLayout(self.current_sat_input_layout)
+
+        # Create and configure the satellite tracking label
+        self.current_sat_label = QLabel("Tracking Satellite:   ")
+        self.current_sat_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.current_sat_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+
+        # Create and configure the satellite tracking input
+        class IDSpinBox(QSpinBox): # Custom QSpinBox to display leading zeros
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self.setRange(0, 99999)
+                self.setFixedWidth(75)
+                self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+                self.setFrame(False)
+                self.setAlignment(Qt.AlignmentFlag.AlignLeft)
+                self.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+                self.setKeyboardTracking(False)
+
+            def textFromValue(self, value):
+                return "%05d" % value
+
+        self.current_sat_id_spinbox = IDSpinBox()
+        self.current_sat_id_spinbox.editingFinished.connect(self.current_sat_id_spinbox.clearFocus)
+
+        class MyProxyStyle(QProxyStyle):
+            def styleHint(self, hint, option=None, widget=None, returnData=None):
+                if hint == QStyle.SH_ComboBox_Popup:
+                    return 0
+                return super().styleHint(hint, option, widget, returnData)
+
+        class MyComboBox(QComboBox):
+            def __init__(self):
+                super().__init__()
+
+            def showPopup(self):
+                super().showPopup()
+                popup = self.view().window()
+                width = self.width()
+                height = 200
+                popup.resize(width, height)
+                popup.move(self.mapToGlobal(self.rect().bottomLeft()))  # Reposition the popup window
+
+        self.satellite_combobox = MyComboBox()
+        self.satellite_combobox.setInsertPolicy(QComboBox.InsertPolicy.InsertAtTop)
+        self.satellite_combobox.setStyle(MyProxyStyle())
+
+        # Add widgets to the layout
+        self.current_sat_input_layout.addWidget(self.satellite_combobox)
+        self.current_sat_input_layout.addWidget(self.current_sat_id_spinbox)
+        self.current_sat_input_layout.addStretch(1)
+
+        # Connect mouse event to spinbox for focus management
+        self.mousePressEvent = lambda event: self.current_sat_id_spinbox.clearFocus() if self.current_sat_id_spinbox.hasFocus() else None
+
+        # Add actions to the topBar
+        self.topBar.addWidget(self.current_sat_input)
+        self.quality_Action = self.topBar.addAction("Switch Quality", self.controller.toggle_quality)
+        self.currentScene_Action = self.topBar.addAction("Switch Scene", self.controller.toggle_scene)
+
+
 
 class Globe3DView(QOpenGLWidget):
     """ Render a 3D globe using OpenGL, with different scenes such as GLOBE_VIEW, TRACKING_VIEW, and EXPLORE_VIEW."""
@@ -187,21 +257,24 @@ class Globe3DView(QOpenGLWidget):
     def drawScene_TRACKING_VIEW(self):
         self.camera.setCameraMode(self.camera.CameraMode.FOLLOW)
         satellite = self.controller.current_satellite # get the current satellite object to track
-        lat, lon, elevation_km = satellite.calc_sat_position()
 
         if self.satellite_position is None:
-            self.satellite_position = self.controller.Earth.geodetic_to_ecef(lat, lon, elevation_km)
+            self.satellite_position = satellite.calc_sat_pos_xyz() * self.controller.scale
         else:
             if self.frame_count % 3 == 0:
-                self.satellite_position = self.controller.Earth.geodetic_to_ecef(lat, lon, elevation_km)
+                self.satellite_position = satellite.calc_sat_pos_xyz() * self.controller.scale
 
         self.frame_count += 1
 
-        self.camera.update(self.satellite_position)
-        self.drawEarth()
-        self.drawSatellite(self.satellite_position, satellite)
+        velocity = satellite.calc_sat_velocity()
+        orientation = satellite.calculate_satellite_orientation(self.satellite_position, satellite)
 
-    def drawSatellite(self, position, satellite):
+
+        self.camera.update(self.satellite_position, orientation, velocity)
+        self.drawEarth()
+        self.drawSatellite(self.satellite_position, velocity, satellite)
+
+    def drawSatellite(self, position, velocity, satellite):
         """ Draw the satellite at the given position. """
         glDepthMask(GL_TRUE)
         glEnable(GL_LIGHTING)
@@ -212,7 +285,6 @@ class Globe3DView(QOpenGLWidget):
 
         rotation_axis, rotation_angle = satellite.calculate_satellite_orientation(position, satellite)
         # Apply rotation if necessary
-        print(rotation_axis, rotation_angle)
         if np.linalg.norm(rotation_axis) != 0:
             rotation_axis /= np.linalg.norm(rotation_axis)
             glRotatef(rotation_angle, *rotation_axis)
@@ -229,6 +301,20 @@ class Globe3DView(QOpenGLWidget):
         glColor(1.0, 1.0, 1.0, .8)
         glVertex3f(*position)
         glVertex3f(0, 0, 0)
+        glEnd()
+
+
+        # draw velocity vector
+        glBegin(GL_LINES)
+        glColor(1.0, 0.0, 0.0, .8)
+        glVertex3f(*(position - self.normalizeVector(velocity) * 0.5))
+        glVertex3f(*position)
+        glEnd()
+
+        glBegin(GL_LINES)
+        glColor(0.0, 1.0, 0.0, .8)
+        glVertex3f(*position)
+        glVertex3f(*(position + self.normalizeVector(velocity) * 0.5))
         glEnd()
 
         # reset color, lighting, and matrix
@@ -257,6 +343,10 @@ class Globe3DView(QOpenGLWidget):
 
         def __str__(self):
             return self.name
+
+    def normalizeVector(self, vector):
+        """ Normalize a vector to have a magnitude of 1 """
+        return vector / np.linalg.norm(vector)
 
     def loadTextures(self, quality):
         if quality == self.RenderQuality.LOW:
@@ -358,22 +448,27 @@ class Globe3DView(QOpenGLWidget):
             self.mode = self.CameraMode.STATIC # default
             self.target_position = [0, 0, 0]
 
-        def update(self, target_position=None):
+        def update(self, target_position=None, target_orientation=None, target_velocity=None):
             if target_position is not None:
                 self.target_position = target_position
 
             if self.mode == self.CameraMode.STATIC:
                 # Static camera has a fixed position and orientation relative to the target object's position, no user input, and won't rotate along with the object.
                 gluLookAt(-40, 0, 0, 0, 0, 0, 0, 0, -1)  # Look at the origin from a distance
+
             elif self.mode == self.CameraMode.FOLLOW:
-                # In FOLLOW mode, assume the camera is set to be slightly above and behind the target
-                radial_offset = self.controller.Earth.radius.km * .15
-                offset = -np.array([-radial_offset,radial_offset, radial_offset])
-                camera_position = self.target_position + offset
-                # Look at the target from the current camera position
+                rotation_axis = target_orientation[0]
+                normalized_direction = self.target_position / np.linalg.norm(self.target_position)
+                normalized_velocity = target_velocity / np.linalg.norm(target_velocity)
+
+                radial_offset = self.controller.Earth.radius.km * 0.25
+
+                camera_position = self.target_position + normalized_direction * radial_offset
+
                 gluLookAt(camera_position[0], camera_position[1], camera_position[2],
-                        self.target_position[0], self.target_position[1], self.target_position[2],
-                        0, 0, -1)  # Up vector is Z-axis up
+                          self.target_position[0], self.target_position[1], self.target_position[2],
+                          rotation_axis[0], rotation_axis[1], rotation_axis[2])
+
             elif self.mode == self.CameraMode.ORBIT:
                 # Orbit camera has a fixed distance from the target object, but can be rotated around the object by user input around the object's position. It doesn't rotate alongside the object's rotation, such as earth's spin.
                 pass

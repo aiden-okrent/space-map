@@ -23,16 +23,54 @@ class ApplicationController:
         # views
         self.MainView = MainView(self)
         self.Globe3DView = Globe3DView(self)
+        # when toolbar text input (current_sat_input is the action, current_sat_input_line is the QLineEdit)
+        self.MainView.current_sat_id_spinbox.editingFinished.connect(self.show_ISS_button_clicked)
+        self.refresh_combobox()
+        self.MainView.satellite_combobox.activated.connect(self.sat_combobox_activated)
         self.MainView.setCentralWidget(self.Globe3DView)
 
     def run(self):
         self.MainView.restoreSettings()
         self.Globe3DView.run()
 
+    def refresh_combobox(self):
+        self.MainView.satellite_combobox.clear()
+        satellites = self.get_satellite_dict()
+        # first, find the iss and put it at the top. use 25544 as id
+        self.MainView.satellite_combobox.addItem('---------')
+        self.MainView.satellite_combobox.addItem('ISS (ZARYA)')
+        for sat_name in satellites:
+            if sat_name == 'ISS (ZARYA)':
+                continue
+            self.MainView.satellite_combobox.addItem(sat_name)
+
+        if self.current_satellite is None:
+            return
+        self.MainView.satellite_combobox.setCurrentIndex(self.MainView.satellite_combobox.findText(self.current_satellite.name))
+
     def show_ISS_button_clicked(self):
-        sat = self.TLEManager.getSatellite("25544")
-        self.setCurrentSatellite(sat)
-        self.Globe3DView.setScene(self.Globe3DView.SceneView.TRACKING_VIEW)
+        text = self.MainView.current_sat_id_spinbox.textFromValue(self.MainView.current_sat_id_spinbox.value())
+        sat = self.TLEManager.getSatellite(text)
+        if sat is None:
+            return
+            #self.setCurrentSatellite(None)
+            #self.MainView.current_sat_id_spinbox.setValue(0)
+            #self.Globe3DView.setScene(self.Globe3DView.SceneView.GLOBE_VIEW)
+        else:
+            self.setCurrentSatellite(sat)
+            self.Globe3DView.setScene(self.Globe3DView.SceneView.TRACKING_VIEW)
+        self.refresh_combobox()
+
+
+    def sat_combobox_activated(self, index):
+        value = int(self.get_satellite_dict()[self.MainView.satellite_combobox.currentText()])
+
+        self.MainView.current_sat_id_spinbox.setValue(value)
+
+        self.show_ISS_button_clicked()
+
+    def get_satellite_dict(self):
+        return self.TLEManager.tle_name_dict()
 
     def setCurrentSatellite(self, satellite: Satellite):
         self.current_satellite = satellite
@@ -40,12 +78,7 @@ class ApplicationController:
     def get_current_satellite_translation(self):
         if self.current_satellite is None:
             return None
-        current_time = self.Timescale.now()
-        lat, lon, elv = self.current_satellite.latlon_at(current_time)
-        point = self.Earth.latlon(lat, lon, elv)
-        translation = self.Earth.point_to_translation(point)
-        #print(translation)
-        return translation
+        return self.current_satellite.calc_sat_pos_xyz()
 
 
     # view toggles

@@ -1,6 +1,6 @@
 import sys
-from pathlib import Path
 
+import qdarkstyle
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QApplication
 

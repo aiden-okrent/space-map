@@ -1,5 +1,7 @@
+import asyncio
 import datetime
 import os
+import socket
 from math import cos, radians, sin, sqrt
 
 import numpy as np
@@ -311,6 +313,8 @@ Build a satellite from orbital elements¶
 If you are starting with raw satellite orbital parameters instead of TLE text, you will want to interact directly with the sgp4 library that Skyfield uses for its low-level satellite calculations.
 The underlying library provides access to a low-level constructor that builds a satellite model directly from numeric orbital parameters:
 from sgp4.api import Satrec, WGS72
+import socket
+import asyncio
 satrec = Satrec()
 satrec.sgp4init(
     WGS72,           # gravity model
@@ -370,8 +374,8 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
             return False
         return True
 
-    def calc_sat_position(self):
-        """Calculate the current position of the satellite.
+    def calc_sat_lon_lat_elv(self):
+        """Calculate the current position of the satellite in terms of latitude, longitude, and elevation.
 
         Returns:
             Tuple: A tuple containing the latitude, longitude, and elevation of the satellite in degrees and kilometers.
@@ -385,6 +389,13 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
         elevation_km = subpoint.elevation.km
 
         return lat, lon, elevation_km
+
+    def calc_sat_pos_xyz(self):
+
+        time = self.controller.Timescale.now()
+        icrf = self.at(time)
+        pos = icrf.xyz.km
+        return pos
 
     def calculate_satellite_orientation(self, position, satellite):
         """Calculate the orientation of the satellite based on its position. Right now, it just points the satallite's downward vector towards the Earth.
@@ -401,8 +412,8 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
         if norm_direction != 0:
             direction /= norm_direction
 
-        # Assume the satellite's default forward vector is along the z-axis
-        forward = np.array([0, 0, 1])
+        # Assume the satellite's forward vector is its velocity vector
+        forward = satellite.calc_sat_velocity()
 
         # Calculate rotation axis and angle
         rotation_axis = np.cross(forward, direction)
@@ -410,6 +421,17 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
 
         return rotation_axis, rotation_angle
 
+    def calc_sat_velocity(self):
+        """Calculate the current velocity of the satellite.
+
+        Returns:
+            Tuple: A tuple containing the velocity of the satellite in km/s.
+        """
+        time = self.controller.Timescale.now()
+        icrf = self.at(time)
+        velocity = icrf.velocity.km_per_s
+        #print(icrf.speed().km_per_s)
+        return velocity
 
     def add_metadata(self, key, value):
         """Add metadata to the Satellite object.
@@ -502,7 +524,21 @@ class TLEManager:
                     return os.path.join(self.tle_dir, filename)
             return None
         else:
-            raise ValueError("No CatalogID provided.")
+           print("No CatalogID provided.")
+           return None
+
+    def tle_name_dict(self):
+        """Get the TLE directory as a dictionary with Catalog IDs as keys and the names of the satellite as values.
+
+        Returns:
+            dict: The TLE directory as a dictionary.
+        """
+        tle_dict = {}
+        for filename in os.listdir(self.tle_dir):
+            with open(os.path.join(self.tle_dir, filename), 'r') as file:
+                tle_data = file.readlines()
+                tle_dict[tle_data[0].strip()] = filename.replace(".tle", "")
+        return tle_dict
 
     def open_tle_file(self, path: str):
         """Open a TLE file and return the data.
@@ -521,7 +557,8 @@ class TLEManager:
                 tle_data = file.readlines()
                 return tle_data
         else:
-            raise ValueError("No TLE path provided.")
+            print("No TLE path provided.")
+            return None
 
     def download_tle(self, catalog_id: str):
         """Download TLE data from Celestrak for a given Catalog ID.
@@ -539,20 +576,31 @@ class TLEManager:
         """
         if not catalog_id:
             return None
-        url = "https://celestrak.org/NORAD/elements/gp.php?CATNR=" + catalog_id + "&FORMAT=TLE"
-        load.tle_file(url, reload=True, filename=os.path.join("src/data/tle_data", catalog_id + ".tle"))
+        import urllib.request
 
+        async def download_tle_data(catalog_id: str):
+            url = "https://celestrak.org/NORAD/elements/gp.php?CATNR=" + catalog_id + "&FORMAT=TLE"
+            try:
+                socket.setdefaulttimeout(8)
+                response = await asyncio.get_event_loop().run_in_executor(None, urllib.request.urlopen, url)
+                data = await asyncio.get_event_loop().run_in_executor(None, response.read)
+                with open(os.path.join("src/data/tle_data", catalog_id + ".tle"), 'wb') as file:
+                    file.write(data)
+            except Exception as e:
+                print("Error occurred while loading TLE file:", str(e))
+
+        asyncio.run(download_tle_data(catalog_id))
         path = self.path_from_ID(catalog_id)
-        if not path:
-            raise FileNotFoundError("Attempted to download TLE file for catalog_id: " + catalog_id + " but resulting file was not found.")
-        else:
+        if path:
             tle_data = self.open_tle_file(path)
             if not tle_data:
-                raise ValueError("No TLE data found for catalog_id: " + catalog_id, "in path: " + path)
+                print("No TLE data found for catalog_id: " + catalog_id, "in path: " + path)
+                return None
             else:
                 if "No GP data found" in tle_data:
                     os.remove(path)
-                    raise ValueError("No satellite with matching catalog_id: " + catalog_id, "found in Celestrak database.")
+                    print("No satellite found in Celestrak database for catalog_id: " + catalog_id)
+                    return None
                 else:
                     return tle_data
 
@@ -571,11 +619,12 @@ class TLEManager:
             Satellite: The Satellite object.
         """
         if not catalog_id:
-            raise ValueError("No catalog_id provided.")
+            print("No catalog_id provided.")
+            return None
 
         path = self.path_from_ID(catalog_id)
         if not path:
-            print("No existing TLE file found for catalog_id: " + catalog_id, "downloading new TLE file from Celestrak database.")
+            print("No existing TLE file found for catalog_id " + catalog_id, "downloading new TLE file from Celestrak database.")
             tle_data = self.download_tle(catalog_id)
             path = self.path_from_ID(catalog_id)
         else:
@@ -584,14 +633,16 @@ class TLEManager:
         if not tle_data == None:
             satellite = Satellite(self.controller, catalog_id, tle_data[1], tle_data[2], name=tle_data[0].strip())
             if not satellite:
-                raise ValueError("Failed to build Satellite object for catalog_id: " + catalog_id, "with TLE data: " + tle_data)
+                print("Failed to build Satellite object for catalog_id: " + catalog_id, "with TLE data: " + tle_data)
+                return None
             if not satellite.epoch_valid_at(datetime.datetime.now(), margin=14):
                 print("Epoch is invalid for satellite with catalog ID: " + catalog_id, "within a margin of " + str(14), "days. Requesting fresh TLE data.")
                 tle_data = self.download_tle(catalog_id)
                 satellite = Satellite(self.controller, catalog_id, tle_data[1], tle_data[2], name=tle_data[0].strip())
             return satellite
         else:
-            raise ValueError("Failed to build Satellite object for catalog_id: " + catalog_id, "because the TLE data returned None.")
+            print("Failed to build Satellite object for catalog_id: " + catalog_id, "because the TLE data returned None.")
+            return None
 
 class Observer():
     """Observer class for calculating satellite visibility from a given location.
