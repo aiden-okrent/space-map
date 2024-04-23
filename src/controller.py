@@ -24,7 +24,7 @@ class ApplicationController:
         self.MainView = MainView(self)
         self.Globe3DView = Globe3DView(self)
         # when toolbar text input (current_sat_input is the action, current_sat_input_line is the QLineEdit)
-        self.MainView.current_sat_id_spinbox.editingFinished.connect(self.show_ISS_button_clicked)
+        self.MainView.current_sat_id_spinbox.editingFinished.connect(self.track_Satellite)
         self.refresh_combobox()
         self.MainView.satellite_combobox.activated.connect(self.sat_combobox_activated)
         self.MainView.setCentralWidget(self.Globe3DView)
@@ -48,7 +48,7 @@ class ApplicationController:
             return
         self.MainView.satellite_combobox.setCurrentIndex(self.MainView.satellite_combobox.findText(self.current_satellite.name))
 
-    def show_ISS_button_clicked(self):
+    def track_Satellite(self):
         text = self.MainView.current_sat_id_spinbox.textFromValue(self.MainView.current_sat_id_spinbox.value())
         sat = self.TLEManager.getSatellite(text)
         if sat is None:
@@ -67,7 +67,7 @@ class ApplicationController:
 
         self.MainView.current_sat_id_spinbox.setValue(value)
 
-        self.show_ISS_button_clicked()
+        self.track_Satellite()
 
     def get_satellite_dict(self):
         return self.TLEManager.tle_name_dict()

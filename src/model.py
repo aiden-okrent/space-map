@@ -461,6 +461,9 @@ class Earth(Geoid):
         super().__init__('WGS84', 6378137.0 * scale, 298.257223563) # WGS84 Earth parameters
         self.controller = controller
         self.scale = scale
+        self.troposphere = self.radius.km + 17 * scale  # Average Troposphere height in km
+        self.karman_line = self.radius.km + 100 * scale  # Karman Line in km
+        self.van_allen_belt = self.radius.km + 640 * scale  # Inner Van Allen Belt in km
 
     def geodetic_to_ecef(self, lat, lon, elevation):
         """Convert geodetic coordinates to ECEF coordinates.

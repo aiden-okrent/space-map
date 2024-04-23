@@ -253,6 +253,9 @@ class Globe3DView(QOpenGLWidget):
         self.camera.setCameraMode(self.camera.CameraMode.STATIC)
         self.camera.update(np.array([0, 0, 0])) # Look at the origin
         self.drawEarth()
+        self.drawClouds()
+        self.drawKarmanLine()
+
 
     def drawScene_TRACKING_VIEW(self):
         self.camera.setCameraMode(self.camera.CameraMode.FOLLOW)
@@ -269,16 +272,18 @@ class Globe3DView(QOpenGLWidget):
         velocity = satellite.calc_sat_velocity()
         orientation = satellite.calculate_satellite_orientation(self.satellite_position, satellite)
 
-
         self.camera.update(self.satellite_position, orientation, velocity)
         self.drawEarth()
         self.drawSatellite(self.satellite_position, velocity, satellite)
+        self.drawClouds()
+        self.drawKarmanLine()
 
     def drawSatellite(self, position, velocity, satellite):
         """ Draw the satellite at the given position. """
-        glDepthMask(GL_TRUE)
+        glDisable(GL_BLEND)
         glEnable(GL_LIGHTING)
-        glColor3f(1.0, 0.0, 0.0)  # red
+        glDepthMask(GL_TRUE)
+        glColor4f(1.0, 0, 0, 1.0)
 
         glPushMatrix()
         glTranslatef(*position)
@@ -295,33 +300,70 @@ class Globe3DView(QOpenGLWidget):
         gluSphere(quadric, 0.05, self.earth_triangles, self.earth_triangles)
         glPopMatrix()
 
-
         #draw a straight line that points to the center of the earth
         glBegin(GL_LINES)
-        glColor(1.0, 1.0, 1.0, .8)
+        glColor4f(1.0, 1.0, 1.0, 1.0)
         glVertex3f(*position)
         glVertex3f(0, 0, 0)
         glEnd()
 
-
         # draw velocity vector
         glBegin(GL_LINES)
-        glColor(1.0, 0.0, 0.0, .8)
-        glVertex3f(*(position - self.normalizeVector(velocity) * 0.5))
+        glColor4f(0.0, 1.0, 0.0, 1.0)
+        glVertex3f(*(position - normalize(velocity) * 0.5))
         glVertex3f(*position)
         glEnd()
 
         glBegin(GL_LINES)
         glColor(0.0, 1.0, 0.0, .8)
         glVertex3f(*position)
-        glVertex3f(*(position + self.normalizeVector(velocity) * 0.5))
+        glVertex3f(*(position + normalize(velocity) * 0.5))
         glEnd()
 
         # reset color, lighting, and matrix
-        #glEnable(GL_LIGHTING)
-        #glDepthMask(GL_TRUE)
-        glColor(1.0, 1.0, 1.0)
+        glColor4f(1.0, 1.0, 1.0, 1.0)
+        glEnable(GL_LIGHTING)
+        glDepthMask(GL_TRUE)
 
+
+    def drawClouds(self):
+        # draw clouds
+        glDepthMask(GL_FALSE)
+        glDisable(GL_LIGHTING)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+        glEnable(GL_BLEND)
+
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self.earth_clouds)
+        glColor4f(1.0, 1.0, 1.0, 0.5)
+
+        quadric = gluNewQuadric()
+        gluQuadricTexture(quadric, GL_TRUE)
+        gluSphere(quadric, self.controller.Earth.troposphere, self.earth_triangles, self.earth_triangles)
+
+        #glBlendFunc(GL_ONE, GL_ZERO)
+        glDisable(GL_BLEND)
+        glEnable(GL_LIGHTING)
+        glDepthMask(GL_TRUE)
+        glColor4f(1.0, 1.0, 1.0, 1)
+
+    def drawKarmanLine(self):
+        # draw the karman line, official boundary of space at 100km
+        glDepthMask(GL_FALSE)
+        glDisable(GL_LIGHTING)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+        glEnable(GL_BLEND)
+        glColor4f(1.0, 1.0, 1.0, 0.5)
+
+        quadric = gluNewQuadric()
+        gluQuadricTexture(quadric, GL_FALSE)
+        gluSphere(quadric, self.controller.Earth.karman_line, self.earth_triangles, self.earth_triangles)
+
+        #glBlendFunc(GL_ONE, GL_ZERO)
+        glDisable(GL_BLEND)
+        glEnable(GL_LIGHTING)
+        glDepthMask(GL_TRUE)
+        glColor4f(1.0, 1.0, 1.0, 1)
 
     def drawScene_EXPLORE_VIEW(self):
         self.camera.setCameraMode(self.camera.CameraMode.ORBIT)
@@ -344,10 +386,6 @@ class Globe3DView(QOpenGLWidget):
         def __str__(self):
             return self.name
 
-    def normalizeVector(self, vector):
-        """ Normalize a vector to have a magnitude of 1 """
-        return vector / np.linalg.norm(vector)
-
     def loadTextures(self, quality):
         if quality == self.RenderQuality.LOW:
             print("Setting quality to low")
@@ -356,6 +394,7 @@ class Globe3DView(QOpenGLWidget):
             self.lighting_enabled = False
             self.earth_daymap = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "land_ocean_ice_2048.jpg"))
             self.stars_milky_way = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "2k_stars_milky_way.jpg"))
+            self.earth_clouds = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "2k_earth_clouds.jpg"))
 
         elif quality == self.RenderQuality.HIGH:
             print("Setting quality to high")
@@ -364,6 +403,8 @@ class Globe3DView(QOpenGLWidget):
             self.lighting_enabled = True
             self.earth_daymap = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "blue_marble_NASA_land_ocean_ice_8192.png"))
             self.stars_milky_way = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "8k_stars_milky_way.jpg"))
+            self.earth_clouds = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "8k_earth_clouds.jpg"))
+
     def unpackImageToTexture(self, imagePath):
         # Load a texture from an image file
         texture = glGenTextures(1)
@@ -381,16 +422,30 @@ class Globe3DView(QOpenGLWidget):
 
         glDepthMask(GL_TRUE) # Re-enable writing to the depth buffer
         glEnable(GL_LIGHTING) # Re-enable lighting
-
+        glDisable(GL_BLEND)
 
         glEnable(GL_TEXTURE_2D)
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, self.earth_daymap) # Bind active texture to Earth texture
 
         # draw earth sphere
+        glColor4f(1.0, 1.0, 1.0, 1.0)
         quadric = gluNewQuadric()
         gluQuadricTexture(quadric, GL_TRUE)  # Enable texture mapping
         gluSphere(quadric, self.controller.Earth.radius.km, self.earth_triangles, self.earth_triangles)
+
+        # draw north pole
+        glColor4f(1.0, 0.0, 0.0, 0.75)
+        glRotatef(180, 0, 1, 0)
+        quadric = gluNewQuadric()
+        gluCylinder(quadric, 0.1, 0.1, self.controller.Earth.radius.km * 1.25, 32, 32)
+
+        # draw south pole
+        glColor4f(0.0, 0.0, 1.0, 0.75)
+        quadric = gluNewQuadric()
+        glRotatef(-180, 0, 1, 0)
+        gluCylinder(quadric, 0.1, 0.1, self.controller.Earth.radius.km * 1.25, 32, 32)
+
 
     def drawSkybox(self):
         """ Draw a skybox around the scene """
@@ -457,21 +512,21 @@ class Globe3DView(QOpenGLWidget):
                 gluLookAt(-40, 0, 0, 0, 0, 0, 0, 0, -1)  # Look at the origin from a distance
 
             elif self.mode == self.CameraMode.FOLLOW:
-                rotation_axis = target_orientation[0]
-                normalized_direction = self.target_position / np.linalg.norm(self.target_position)
-                normalized_velocity = target_velocity / np.linalg.norm(target_velocity)
 
                 radial_offset = self.controller.Earth.radius.km * 0.25
+                up = np.array([0, 0, 1]) # up vector to align with the Earth's poles
 
-                camera_position = self.target_position + normalized_direction * radial_offset
+                center = normalize(self.target_position)
+                eye = self.target_position + center * radial_offset
 
-                gluLookAt(camera_position[0], camera_position[1], camera_position[2],
-                          self.target_position[0], self.target_position[1], self.target_position[2],
-                          rotation_axis[0], rotation_axis[1], rotation_axis[2])
+                view_matrix = look_at(eye, self.target_position, up)
+                glLoadMatrixf(view_matrix.T)
 
             elif self.mode == self.CameraMode.ORBIT:
                 # Orbit camera has a fixed distance from the target object, but can be rotated around the object by user input around the object's position. It doesn't rotate alongside the object's rotation, such as earth's spin.
                 pass
+
+
 
         def setCameraMode(self, mode):
             self.mode = mode
@@ -482,3 +537,30 @@ class Globe3DView(QOpenGLWidget):
             STATIC = 0
             ORBIT = 1
             FOLLOW = 2
+
+
+
+# Utility functions
+def normalize(v):
+    return v / np.linalg.norm(v)
+
+def compute_normal_of_plane(v1, v2):
+    return np.cross(v1, v2)
+
+def look_at(eye, center, up):
+    f = normalize(center - eye)  # forward
+    s = normalize(np.cross(f, up))  # side
+    u = np.cross(s, f)  # recalculate up
+
+    # Create the corresponding rotation matrix
+    M = np.identity(4)
+    M[0, :3] = s
+    M[1, :3] = u
+    M[2, :3] = -f
+
+    # Create the translation matrix
+    T = np.identity(4)
+    T[:3, 3] = -eye
+
+    # Combine rotation and translation into a single matrix
+    return np.dot(M, T)
