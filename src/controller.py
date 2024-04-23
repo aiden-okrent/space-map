@@ -3,6 +3,9 @@ The controller is the main switchboard responsible for handling the communicatio
 The controller is the first thing run by main.py and is responsible for setting up the application and handling the main event loop.
 '''
 
+import matplotlib.pyplot as plt
+import numpy as np
+from mpl_toolkits.basemap import Basemap
 from skyfield.api import Timescale, load
 
 from model import Earth, Satellite, TLEManager
@@ -60,6 +63,27 @@ class ApplicationController:
             self.setCurrentSatellite(sat)
             self.Globe3DView.setScene(self.Globe3DView.SceneView.TRACKING_VIEW)
         self.refresh_combobox()
+
+    def display_2D_map(self):
+        # opens the earth texture in a matplotlib window and displays the satellite's position as a red dot longitude and latitude
+        fig = plt.figure()
+
+        icrf = self.current_satellite.at(self.Timescale.now())
+        subpoint = icrf.subpoint()
+        longitude = subpoint.longitude.degrees
+        latitude = subpoint.latitude.degrees
+        height = subpoint.elevation.km
+
+        h = height
+        m = Basemap(projection='nsper',lon_0=longitude,lat_0=latitude, satellite_height=h*1000.,resolution='l')
+        m.drawparallels(np.arange(-90.,120.,30.))
+        m.drawmeridians(np.arange(0.,420.,60.))
+        m.warpimage(image=self.Earth.textures_8k["earth_daymap"])
+        x, y = m(longitude, latitude)
+
+        m.plot(x, y, 'ro', markersize=10)
+
+        plt.show()
 
 
     def sat_combobox_activated(self, index):

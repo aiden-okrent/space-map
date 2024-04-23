@@ -8,6 +8,8 @@ import numpy as np
 from skyfield.api import EarthSatellite, load, wgs84
 from skyfield.toposlib import Geoid
 
+from config import map_textures
+
 ''' In MVC, the model is the part of the application that is responsible for managing the data.
 It receives requests from the controller and returns the data to the controller.
 The model is not aware of the view, so the data returned by the model is independent of the presentation.
@@ -465,6 +467,18 @@ class Earth(Geoid):
         self.karman_line = self.radius.km + 100 * scale  # Karman Line in km
         self.van_allen_belt = self.radius.km + 640 * scale  # Inner Van Allen Belt in km
 
+        self.textures_8k = {
+            "earth_daymap": os.path.join(map_textures, "blue_marble_NASA_land_ocean_ice_8192.png"),
+            "earth_clouds": os.path.join(map_textures, "8k_earth_clouds.jpg"),
+            "stars_milky_way": os.path.join(map_textures, "8k_stars_milky_way.jpg")
+        }
+
+        self.textures_2k = {
+            "earth_daymap": os.path.join(map_textures, "land_ocean_ice_2048.jpg"),
+            "earth_clouds": os.path.join(map_textures, "2k_earth_clouds.jpg"),
+            "stars_milky_way": os.path.join(map_textures, "2k_stars_milky_way.jpg")
+        }
+
     def geodetic_to_ecef(self, lat, lon, elevation):
         """Convert geodetic coordinates to ECEF coordinates.
 
@@ -497,7 +511,6 @@ class Earth(Geoid):
         #print(f"Scaled Elevation (h): {scaled_h} km")
         #print(f"Satellite Position - X: {x} km, Y: {y} km, Z: {z} km")
         return np.array([x, y, z])
-
 
 class TLEManager:
     """Manages TLE orbital data; Reading from .TLE files, validating Epoch, requesting new data from Celestrak, and building Satellite objects.

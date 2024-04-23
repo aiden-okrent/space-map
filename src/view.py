@@ -64,8 +64,6 @@ from PySide6.QtWidgets import (
 from skyfield.toposlib import GeographicPosition
 from skyfield.units import Angle, Distance
 
-from config import map_textures
-
 
 class AbstractWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -185,6 +183,7 @@ class MainView(AbstractWindow):
         # Add actions to the topBar
         self.topBar.addWidget(self.current_sat_input)
         self.quality_Action = self.topBar.addAction("Switch Quality", self.controller.toggle_quality)
+        self.display_2D_map_Action = self.topBar.addAction("2D Map", self.controller.display_2D_map)
         self.currentScene_Action = self.topBar.addAction("Switch Scene", self.controller.toggle_scene)
 
 
@@ -255,7 +254,6 @@ class Globe3DView(QOpenGLWidget):
         self.drawEarth()
         self.drawClouds()
         self.drawKarmanLine()
-
 
     def drawScene_TRACKING_VIEW(self):
         self.camera.setCameraMode(self.camera.CameraMode.FOLLOW)
@@ -346,7 +344,6 @@ class Globe3DView(QOpenGLWidget):
         glEnable(GL_LIGHTING)
         glDepthMask(GL_TRUE)
         glColor4f(1.0, 1.0, 1.0, 1)
-
     def drawKarmanLine(self):
         # draw the karman line, official boundary of space at 100km
         glDepthMask(GL_FALSE)
@@ -392,18 +389,18 @@ class Globe3DView(QOpenGLWidget):
             glShadeModel(GL_FLAT)
             self.earth_triangles = 16
             self.lighting_enabled = False
-            self.earth_daymap = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "land_ocean_ice_2048.jpg"))
-            self.stars_milky_way = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "2k_stars_milky_way.jpg"))
-            self.earth_clouds = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "2k_earth_clouds.jpg"))
+            self.earth_daymap = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_2k["earth_daymap"])
+            self.stars_milky_way = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_2k["stars_milky_way"])
+            self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_2k["earth_clouds"])
 
         elif quality == self.RenderQuality.HIGH:
             print("Setting quality to high")
             glShadeModel(GL_SMOOTH)
             self.earth_triangles = 256
             self.lighting_enabled = True
-            self.earth_daymap = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "blue_marble_NASA_land_ocean_ice_8192.png"))
-            self.stars_milky_way = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "8k_stars_milky_way.jpg"))
-            self.earth_clouds = self.unpackImageToTexture(imagePath=os.path.join(map_textures, "8k_earth_clouds.jpg"))
+            self.earth_daymap = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["earth_daymap"])
+            self.stars_milky_way = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["stars_milky_way"])
+            self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["earth_clouds"])
 
     def unpackImageToTexture(self, imagePath):
         # Load a texture from an image file
@@ -445,8 +442,6 @@ class Globe3DView(QOpenGLWidget):
         quadric = gluNewQuadric()
         glRotatef(-180, 0, 1, 0)
         gluCylinder(quadric, 0.1, 0.1, self.controller.Earth.radius.km * 1.25, 32, 32)
-
-
     def drawSkybox(self):
         """ Draw a skybox around the scene """
         glDisable(GL_LIGHTING) # Disable lighting for the skybox
