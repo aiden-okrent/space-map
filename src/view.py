@@ -394,7 +394,7 @@ class Globe3DView(QOpenGLWidget):
         surface_position = normalize(position) * self.controller.Earth.radius.km
         glTranslatef(*surface_position)
         glColor4f(1.0, 0, 0, 1.0) # Red color for the satellite
-        gluSphere(quadric, 0.1, self.earth_triangles, self.earth_triangles)
+        gluSphere(quadric, 0.01, self.earth_triangles, self.earth_triangles)
         glPopMatrix()
 
 

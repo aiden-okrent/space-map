@@ -105,7 +105,8 @@ class ApplicationController(ControllerProtocol):
         latitude = coords[1].degrees
 
         #m = Basemap(projection='geos', lon_0=longitude, resolution='l')
-        m = Basemap(projection='geos',lon_0=longitude,resolution='l',rsphere=(6378137.00,6356752.3142))
+        #m = Basemap(projection='geos',lon_0=longitude,resolution='l',rsphere=(6378137.00,6356752.3142))
+        m = Basemap(projection='cyl', resolution='l', llcrnrlat=-90, urcrnrlat=90, llcrnrlon=-180, urcrnrlon=180)
         m.drawparallels(np.arange(-90., 120., 30.))
         m.drawmeridians(np.arange(0., 420., 60.))
         m.warpimage(image=self.Earth.textures_2k["earth_daymap"])
