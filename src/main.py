@@ -1,6 +1,7 @@
 import sys
 
 import qdarkstyle
+from OpenGL.GLUT import glutInit
 from PySide6.QtCore import QCoreApplication
 from PySide6.QtWidgets import QApplication
 

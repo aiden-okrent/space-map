@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from OpenGL.GL import *
 from OpenGL.GLU import *
-from OpenGL.GLUT import *
 from PySide6 import QtCore
 from PySide6.QtGui import QImage, QMouseEvent, QTransform
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
@@ -355,25 +354,47 @@ class Globe3DView(QOpenGLWidget):
 
     def drawScene_GLOBE_VIEW(self):
         self.setCameraTarget("Earth", [0, 0, 0])
+
+        self.drawXYZAxis()
+
+        glPushMatrix()
         self.drawEarth()
+        glPopMatrix()
 
     def drawScene_TRACKING_VIEW(self):
         satellite = self.controller.current_satellite # get the current satellite object to track
-        if self.satellite_position is None:
-            self.satellite_position = self.Earth.get3DCartesianCoordinates(satellite, self.controller.Timescale.now())
-        else:
-            if self.frame_count % 3 == 0:
-                self.satellite_position = self.Earth.get3DCartesianCoordinates(satellite, self.controller.Timescale.now())
+        self.satellite_position = self.Earth.get3DCartesianCoordinates(satellite, self.controller.Timescale.now())
         self.frame_count += 1
-
         self.setCameraTarget(satellite.name, self.satellite_position)
+
+        glPushMatrix()
         self.drawEarth()
+        self.drawPoles()
+        if self.quality == self.RenderQuality.DEBUG:
+            self.drawEquator()
+            self.drawPrimeMeridian()
+            self.drawXYZAxis()
+
         self.drawSatellite(self.satellite_position)
+        glPopMatrix()
 
 
     def drawScene_EXPLORE_VIEW(self):
         self.setCameraTarget("Earth", [0, 0, 0])
+
+        satellite = self.controller.current_satellite # get the current satellite object to track
+        self.satellite_position = self.Earth.get3DCartesianCoordinates(satellite, self.controller.Timescale.now())
+
+        glPushMatrix()
         self.drawEarth()
+        self.drawPoles()
+        if self.quality == self.RenderQuality.DEBUG:
+            self.drawEquator()
+            self.drawPrimeMeridian()
+            self.drawXYZAxis()
+
+        self.drawSatellite(self.satellite_position)
+        glPopMatrix()
 
 
     def drawSatellite(self, position):
@@ -387,23 +408,22 @@ class Globe3DView(QOpenGLWidget):
         glTranslatef(*position)
         quadric = gluNewQuadric()
         gluQuadricTexture(quadric, GL_FALSE)
-        gluSphere(quadric, 0.01, self.earth_triangles, self.earth_triangles)
+        gluSphere(quadric, 0.1, self.earth_triangles, self.earth_triangles)
         glPopMatrix()
 
         glPushMatrix()
-        surface_position = normalize(position) * self.controller.Earth.radius.km
+        surface_position = -normalize(position) * self.controller.Earth.radius.km
         glTranslatef(*surface_position)
         glColor4f(1.0, 0, 0, 1.0) # Red color for the satellite
-        gluSphere(quadric, 0.01, self.earth_triangles, self.earth_triangles)
+        gluSphere(quadric, 0.1, self.earth_triangles, self.earth_triangles)
         glPopMatrix()
 
-
+        glLineWidth(2)
         glPushMatrix() #draw a straight line that points through the center of the earth
         glBegin(GL_LINES)
-        glColor4f(1.0, 1.0, 1.0, 1.0) # White color for the line
+        glColor4f(1.0, 0.5, 0, 1.0) # Orange color for the line
         glVertex3f(*position)
-        inverted_position = [-x for x in position]
-        glVertex3f(*inverted_position)
+        glVertex3f(0,0,0)
         glEnd()
         glPopMatrix()
 
@@ -523,42 +543,137 @@ class Globe3DView(QOpenGLWidget):
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         image = QImage(imagePath)
         image = image.convertToFormat(QImage.Format.Format_RGBA8888)
-        #image = image.mirrored(True, False)  # Flip horizontally
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width(), image.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, image.bits())
+        image = image.mirrored(False, True) # Flip the image vertically
+        glTexImage2D(
+            GL_TEXTURE_2D,      # target: Specifies the target texture. GL_TEXTURE_2D is the most common target.
+            0,                  # level: Specifies the level-of-detail number. Level 0 is the base image level.
+            GL_RGBA,            # internalformat: Specifies the number of color components in the texture.
+            image.width(),      # width: Specifies the width of the texture image.
+            image.height(),     # height: Specifies the height of the texture image.
+            0,                  # border: This value must be 0.
+            GL_RGBA,            # format: Specifies the format of the pixel data. It should match internalformat.
+            GL_UNSIGNED_BYTE,   # type: Specifies the data type of the pixel data.
+            image.bits()        # pixels: Specifies a pointer to the image data in memory.
+        )
+
         return texture
 
     def drawEarth(self):
+        #self.drawSphereManual()
 
-        glDepthMask(GL_TRUE) # Re-enable writing to the depth buffer
-        glEnable(GL_LIGHTING) # Re-enable lighting
-        glDisable(GL_BLEND)
+        glRotatef(-90, 1, 0, 0) # Align Earth's North Pole with the z-axis
+        glRotatef(-90, 0, 0, 1) # Align Earth's Prime Meridian with the x-axis
 
+        glColor4f(1.0, 1.0, 1.0, 1.0) # Set base color to white
         glEnable(GL_TEXTURE_2D)
         glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.earth_daymap) # Bind active texture to Earth texture
+        glBindTexture(GL_TEXTURE_2D, self.earth_daymap)
 
-        # draw earth sphere
-        glColor4f(1.0, 1.0, 1.0, 1.0)
-        #glRotatef(180, 0, 1, 0)
-        self.drawSphereManual()
-        #glRotatef(-180, 0, 1, 0)
 
-    def drawXYZAxis(self):
-        # draw XYZ axis
+        glMatrixMode(GL_TEXTURE)
+        glLoadIdentity()
+        glTranslatef(0.75, 0, 0)  # Adjust texture offset if needed to align Prime Meridian
+        glMatrixMode(GL_MODELVIEW)
+
+        # Create and draw the sphere with Earth texture
+        quadric = gluNewQuadric()
+        gluQuadricTexture(quadric, GL_TRUE)
+        gluSphere(quadric, self.controller.Earth.radius.km, self.earth_triangles, self.earth_triangles)
+        gluDeleteQuadric(quadric)
+        glColor4f(1.0, 1.0, 1.0, 1.0) # Reset color
+
+
+        # Reset the texture matrix to avoid affecting other textures
+        glMatrixMode(GL_TEXTURE)
+        glLoadIdentity()
+        glMatrixMode(GL_MODELVIEW)
+
+    def drawPoles(self):
+        glLineWidth(10)
+
+        # Draw South Pole
         glPushMatrix()
-        glLineWidth(2)
+        glTranslatef(0, 0, -self.controller.Earth.radius.km)
+        glColor4f(0.0, 0.0, 1.0, 1.0)
         glBegin(GL_LINES)
-        glColor4f(1.0, 0, 0, 1.0) # Red color for the X-axis
         glVertex3f(0, 0, 0)
-        glVertex3f(1, 0, 0)
-        glColor4f(0, 1.0, 0, 1.0) # Green color for the Y-axis
-        glVertex3f(0, 0, 0)
-        glVertex3f(0, 1, 0)
-        glColor4f(0, 0, 1.0, 1.0) # Blue color for the Z-axis
-        glVertex3f(0, 0, 0)
-        glVertex3f(0, 0, 1)
+        glVertex3f(0, 0, -2)
         glEnd()
         glPopMatrix()
+
+        # Draw North Pole
+        glPushMatrix()
+        glTranslatef(0, 0, self.controller.Earth.radius.km)
+        glColor4f(1.0, 0.0, 0.0, 1.0)
+        glBegin(GL_LINES)
+        glVertex3f(0, 0, 0)
+        glVertex3f(0, 0, 2)
+        glEnd()
+        glPopMatrix()
+
+        glColor4f(1.0, 1.0, 1.0, 1.0) # Reset color
+
+    def drawEquator(self):
+        glLineWidth(5)
+        glColor4f(1.0, 0.0, 0.0, 1.0)
+        # Draw Equator as a loop around the Earth
+        glBegin(GL_LINE_LOOP)
+        for i in range(0, 360):
+            x = (self.controller.Earth.radius.km + 1) * cos(radians(i))
+            y = (self.controller.Earth.radius.km + 1) * sin(radians(i))
+            glVertex3f(x, y, 0)
+        glEnd()
+        glColor4f(1.0, 1.0, 1.0, 1.0)
+
+    def drawPrimeMeridian(self):
+        glLineWidth(5)
+        glColor4f(1.0, 1.0, 1.0, 1.0)
+        # drawPrimeMeridian as a loop around the Earth
+        glBegin(GL_LINE_LOOP)
+        for i in range(0, 360):
+            x = (self.controller.Earth.radius.km + 1) * cos(radians(i))
+            z = (self.controller.Earth.radius.km + 1) * sin(radians(i))
+            glVertex3f(x, 0, z)
+        glEnd()
+        glColor4f(1.0, 1.0, 1.0, 1.0)
+
+    def drawXYZAxis(self):
+        axisLength = self.controller.Earth.radius.km * 1.5  # Make axes slightly longer than the radius
+        lineWidth = 5
+
+        glEnable(GL_LIGHTING)
+        glDepthMask(GL_TRUE)
+
+        # X-Axis (Red)
+        glPushMatrix()
+        glColor4f(1.0, 0.0, 0.0, 1.0)
+        glLineWidth(lineWidth)
+        glBegin(GL_LINES)
+        glVertex3f(0, 0, 0)
+        glVertex3f(axisLength, 0, 0)
+        glEnd()
+        glPopMatrix()
+
+        # Y-Axis (Green)
+        glPushMatrix()
+        glColor4f(0.0, 1.0, 0.0, 1.0)
+        glLineWidth(lineWidth)
+        glBegin(GL_LINES)
+        glVertex3f(0, 0, 0)
+        glVertex3f(0, axisLength, 0)
+        glEnd()
+        glPopMatrix()
+
+        # Z-Axis (Blue)
+        glPushMatrix()
+        glColor4f(0.0, 0.0, 1.0, 1.0)
+        glLineWidth(lineWidth)
+        glBegin(GL_LINES)
+        glVertex3f(0, 0, 0)
+        glVertex3f(0, 0, axisLength)
+        glEnd()
+        glPopMatrix()
+
         glColor4f(1.0, 1.0, 1.0, 1.0) # Reset color
 
     def drawSphereManual(self):
@@ -570,18 +685,6 @@ class Globe3DView(QOpenGLWidget):
         radius = self.controller.Earth.radius.km
 
         glPushMatrix()
-
-        # up = y, down = -y
-        # right = x, left = -x
-        # forward = z, backward = -z
-
-        # rotate the earth to have positive y-axis pointing up
-        glRotatef(90, 1, 0, 0)
-        # yaw/turn right
-        glRotatef(90, 0, 0, 1)
-
-
-
         glDepthMask(GL_TRUE)
         glEnable(GL_LIGHTING)
         glDisable(GL_BLEND)
@@ -743,15 +846,28 @@ class Globe3DView(QOpenGLWidget):
 
         def update(self):
             if self.mode == self.CameraMode.STATIC:
-                gluLookAt(self.Earth.radius.km + 1, 0, 0, 0, 0, 0, *self.controller.Earth.upVector)
+                #glPushMatrix()
+                gluLookAt(
+                    0, 0, 30,
+                    0, 0, 0,
+                    0, 0, 1
+                )
+                #glPopMatrix()
 
             elif self.mode == self.CameraMode.FOLLOW:
+                glRotatef(-90, 1, 0, 0) # Align Earth's North Pole with the z-axis
+                glRotatef(-90, 0, 0, 1) # Align Earth's Prime Meridian with the x-axis
+
                 target = self.globe3DView.cameraTarget
                 target_pos = target["position"]
 
-                camera_pos = target_pos
-                gluLookAt(*camera_pos, 0,0,0, *self.controller.Earth.upVector)
+                # firstly, normalize the target position
+                normalized_target_pos = normalize(target_pos) * (self.Earth.radius.km * 1.5)
 
+                # then, calculate the camera position with cross product
+                #camera_pos = np.cross(normalized_target_pos, [0, 0, 1])
+
+                gluLookAt(*target_pos, 0,0,0, *self.controller.Earth.upVector)
             elif self.mode == self.CameraMode.ORBIT:
                 target = self.globe3DView.cameraTarget
                 target_pos = target["position"]

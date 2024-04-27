@@ -538,6 +538,8 @@ class Earth(Geoid):
         # Use the Skyfield API's method to get latitude and longitude from the geocentric position
         latitude, longitude = self.latlon_of(geocentric_position)
 
+        print(latitude, longitude)
+
         return (latitude, longitude)
 
     def get3DCartesianCoordinates(self, satellite: Satellite, time: Time):
@@ -557,10 +559,15 @@ class Earth(Geoid):
         # Extract the x, y, z coordinates from the position object using .position.km
         x, y, z = geocentric_position.position.km * self.scale# .km converts to kilometers and self.scale is the scale of the Earth
 
-        # translate 90 degrees to the right to align with the x-axis
+        position = np.array([x, y, z])
 
+        # first rotate satellite positions 180 degrees to align with the Earth's surface correctly
+        position = position * -1
 
-        return (x, y, z)
+        # next invert z-axis to align with the Earth's surface correctly
+        position[2] *= -1
+
+        return position
 
 class TLEManager:
     """Manages TLE orbital data; Reading from .TLE files, validating Epoch, requesting new data from Celestrak, and building Satellite objects.

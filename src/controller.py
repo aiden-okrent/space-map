@@ -101,8 +101,8 @@ class ApplicationController(ControllerProtocol):
         fig = plt.figure()
 
         coords = self.Earth.get2DCartesianCoordinates(self.current_satellite, self.Timescale.now())
-        longitude = coords[0].degrees
-        latitude = coords[1].degrees
+        latitude = coords[0].degrees
+        longitude = coords[1].degrees
 
         #m = Basemap(projection='geos', lon_0=longitude, resolution='l')
         #m = Basemap(projection='geos',lon_0=longitude,resolution='l',rsphere=(6378137.00,6356752.3142))
