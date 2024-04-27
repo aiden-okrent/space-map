@@ -2,10 +2,12 @@ import asyncio
 import datetime
 import os
 import socket
+from calendar import c
 from math import cos, radians, sin, sqrt
 
 import numpy as np
-from skyfield.api import EarthSatellite, load, wgs84
+from skyfield.api import Angle, Distance, EarthSatellite, Time, load, wgs84
+from skyfield.positionlib import Geocentric
 from skyfield.toposlib import Geoid
 
 from config import map_textures
@@ -376,96 +378,19 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
             return False
         return True
 
-    def calc_sat_lon_lat_elv(self):
-        """Calculate the current position of the satellite in terms of latitude, longitude, and elevation.
-
-        Returns:
-            Tuple: A tuple containing the latitude, longitude, and elevation of the satellite in degrees and kilometers.
-        """
-        time = self.controller.Timescale.now()  # Current time
-        icrf = self.at(time)
-        subpoint = self.controller.Earth.subpoint(icrf)
-
-        lat = subpoint.latitude.degrees
-        lon = subpoint.longitude.degrees
-        elevation_km = subpoint.elevation.km
-
-        return lat, lon, elevation_km
-
-    def calc_sat_pos_xyz(self):
-
-        time = self.controller.Timescale.now()
-        icrf = self.at(time)
-        pos = icrf.xyz.km
-        return pos
-
-    def calculate_satellite_orientation(self, position, satellite):
-        """Calculate the orientation of the satellite based on its position. Right now, it just points the satallite's downward vector towards the Earth.
-
-        Args:
-            position (np.array): The position of the satellite in ECEF coordinates.
-            satellite (Satellite): The satellite object.
-
-        Returns:
-            np.array, float: The rotation axis and angle for the satellite.
-        """
-        direction = -position
-        norm_direction = np.linalg.norm(direction)
-        if norm_direction != 0:
-            direction /= norm_direction
-
-        # Assume the satellite's forward vector is its velocity vector
-        forward = satellite.calc_sat_velocity()
-
-        # Calculate rotation axis and angle
-        rotation_axis = np.cross(forward, direction)
-        rotation_angle = np.arccos(np.dot(forward, direction)) * (180.0 / np.pi)  # Convert to degrees
-
-        return rotation_axis, rotation_angle
-
-    def calc_sat_velocity(self):
-        """Calculate the current velocity of the satellite.
-
-        Returns:
-            Tuple: A tuple containing the velocity of the satellite in km/s.
-        """
-        time = self.controller.Timescale.now()
-        icrf = self.at(time)
-        velocity = icrf.velocity.km_per_s
-        #print(icrf.speed().km_per_s)
-        return velocity
-
-    def add_metadata(self, key, value):
-        """Add metadata to the Satellite object.
-
-        Args:
-            key (str): The key to store the metadata under.
-            value (_type_): The value to store in the metadata.
-        """
-        self.metadata[key] = value
-
-    def get_metadata(self, key):
-        """Get metadata from the Satellite object.
-
-        Args:
-            key (str): The key to get the metadata for.
-
-        Returns:
-            _type_: The metadata value.
-        """
-        return self.metadata.get(key, "Metadata not found")
 
 
 class Earth(Geoid):
     """Earth object extending the Skyfield Geoid class to provide additional functionality. Standard WGS84 Earth parameters are used at a given scale.
     """
     def __init__(self, controller, scale: int):
-        super().__init__('WGS84', 6378137.0 * scale, 298.257223563) # WGS84 Earth parameters
+        super().__init__('WGS84', 6378137.0 * scale, 298.257223563) # WGS84 Geoid
         self.controller = controller
         self.scale = scale
         self.troposphere = self.radius.km + 17 * scale  # Average Troposphere height in km
         self.karman_line = self.radius.km + 100 * scale  # Karman Line in km
         self.van_allen_belt = self.radius.km + 640 * scale  # Inner Van Allen Belt in km
+        self.upVector = np.array([0, 1, 0]) # +y aligned
 
         self.textures_8k = {
             "earth_daymap": os.path.join(map_textures, "blue_marble_NASA_land_ocean_ice_8192.png"),
@@ -479,38 +404,163 @@ class Earth(Geoid):
             "stars_milky_way": os.path.join(map_textures, "2k_stars_milky_way.jpg")
         }
 
-    def geodetic_to_ecef(self, lat, lon, elevation):
-        """Convert geodetic coordinates to ECEF coordinates.
+        self.textures_debug = {
+            "earth_daymap": os.path.join(map_textures, "land_shallow_topo_350.jpg"),
+            "earth_clouds": os.path.join(map_textures, "2k_earth_clouds.jpg"),
+            "stars_milky_way": os.path.join(map_textures, "2k_stars_milky_way.jpg")
+        }
+        #
+        # native Skyfield Geoid object
+        # Geoid.subpoint is deprecated
+        # Geoid.geographic_position_of() is to be used instead
+        # Geoid.polar_radius = The Earth's polar radius as a Distance
+        # Geoid.latlon(latitude_degrees, longitude_degrees, elevation_m=0.0, cls=<class 'skyfield.positionlib.GeographicPosition'>) = Return a GeographicPosition object for a given latitude and longitude, specified in degrees. To get a point on the surface of the geoid, don't provide any elevation. Longitude is always positive east, negative west.
+        # Geoid.latlon_of(position) = Return the latitude and longitude of a position. Provided that the position's .center is 399, the Earth's center. Geodetic latitude and longitude are returned as a pair of Angle objects
+        # Geoid.height_of(position) = Return the height above the Earth ellipsoid of a position. Similarly the center must be 399. A Distance object is returned giving the position's Geodetic height above the Earth's surface.
+        # Geoid.geographic_position_of(position) = Return the GeographicPosition of a position. 399. A GeographicPosition object is returned giving the position's Geodetic latitude and longitude and an elevation above or below the geoid's surface.
+        # Geoid.subpoint_of(position) = Return the point on the ellipsoid directly below a position. 399. A GeographicPosition object is returned giving the latitude and longitude that lie directly below the input position at an elevation above the geoid of 0.
+
+
+        # native Skyfield GeographicPosition object
+        # GeographicPosition.model = a Geoid
+        # GeographicPosition.latitude = An Angle specifying latitude; the north pole has latitude +90 degrees
+        # GeographicPosition.longitude = An Angle specifying longitude; east is positive, west is negative
+        # GeographicPosition.elevation = A Distance specifying elevation above (positive) or below (negative) the surface of the Earth ellipsoid specified by the model Geoid
+        # GeographicPosition.itrs_xyz = A Distance object giving the spacial (x,y,z) coordinates of this location in relation to the ITRS Earth-centered Earth-fixed (ECEF) reference frame
+        # GeographicPosition.center = The integer 399, which identifies this position as geocentric: its (x,y,z) coordinates are measured from the Earth's center
+        # GeographicPosition.at(t) = Return the position of this Earth location at the given time t
+        # GeographicPosition.lst_hours_at(t) = Return the Local Apparent Sidereal Time in hours at time t
+        # GeographicPosition.refract(altitude_degrees, temperature_C, pressure_mbar) = Return an Angle predicting atmospheric refraction at this location
+        # GeographicPosition.rotation_at(t) = Compute rotation from GCRS to this location's altazimuth system at time t
+
+        # native Skyfield ITRSPosition(itrs_xyz) object
+        # an (x,y,z) position in the Earth-centered, Earth-fixed (ECEF) ITRS frame. Has know knowledge of standard geoids, lats, or longs, but is convenient if the rectangular coordinates of target location is known.
+        # ITRSPosition.at(t) = Return the position of this ITRS location at the given time t
+
+        # an example from the docs of how to use an earth satellite object
+        '''
+        bluffton = wgs84.latlon(+40.8939, -83.8917)
+        t0 = ts.utc(2014, 1, 23)
+        t1 = ts.utc(2014, 1, 24)
+        t, events = satellite.find_events(bluffton, t0, t1, altitude_degrees=30.0)
+        event_names = 'rise above 30°', 'culminate', 'set below 30°'
+        for ti, event in zip(t, events):
+            name = event_names[event]
+            print(ti.utc_strftime('%Y %b %d %H:%M:%S'), name)
+
+        # the simplest form of generating a satellite position is to call the satellite.at() method, which returns an (x,y,z) GeographicPosition relative to the Earth's center in the Geocentric Celestial Reference System (GCRS).
+        geocentric = satellite.at(ts.now())
+        print(geocentric.position.km)
+
+        [ -3918.87650458 -1887.64838745  5209.08801512]
+
+
+        # after computing it's geocentric position, you can use wgs84 methods to return latitude, longitude, and height
+        geocentric = satellite.at(ts.now())
+
+        lat, lon = wgs84.latlon_of(geocentric)
+        print('Latitude:', lat, 'Longitude:', lon)
+
+        height = wgs84.height_of(geocentric)
+        print('Height:', height)
+
+        [50deg 14' 37.4" -86deg 23' 23.3"]
+
+        # subpoint_of() returns the point below the satellite position clamped to the Earth's surface, elevation of 0
+        subpoint = wgs84.subpoint_of(geocentric)
+
+        # however, this all assumes the surface is at sea-level elevation 0, so to accoutn for this you need to manually build a subpoint by providing the elevation of the ground into the wgs84.latlon().
+        # not shown
+
+        '''
+
+        '''
+        geocentric = satellite.at(ts.now())
+
+        # geocentric coordinates are defined as either Cartesian ICRS or Spherical ICRS.
+        # Cartesian coordinates are in (x,y,z). An example of how to get the Cartesian coordinates of a GeographicPosition object is shown below.
+
+
+
+        # Spherican coordinates are measured in (right ascension, declination, distance), which are Angle, Angle, and Distance objects respectively.
+
+
+        '''
+        #ts = load.timescale()
+        #geocentric_GeographicPosition = EarthSatellite.at(ts.now()) # because this EarthSatellite's center is 399, .at() returns a Geocentric GeographicPosition object
+        #cartesian_ICRS_coordinates = geocentric_GeographicPosition.xyz # .xyz is a Distance object and fully supports .km
+        #spherical_ICRS_coordinates = geocentric_GeographicPosition.radac() # returns (right ascension, declination, distance) in Angle, Angle, and Distance objects respectively
+
+        #spherical_ICRS_coordinates_procession_corrected = geocentric_GeographicPosition.radac(epoch='date') # returns (right ascension, declination, distance) in Angle, Angle, and Distance objects respectively, but corrected for the procession of the Earth's axis
+
+        '''
+        ITRS Coordinates:
+        xy-plane: Earth's equator
+        x-axis: 0° longitude (Prime Meridian)
+        y-axis: 90° longitude (East along the equator)
+        z-axis: North Pole
+        side to side Latitude: 0° at the equator, 90° at the North Pole, -90° at the South Pole
+        up and down Longitude: 0° at the Prime Meridian, 180° at the International Date Line, east is positive, west is negative
+
+        Turning coordinates into a position:
+        If starting with ICRS (x,y,z) coordinates, you can turn them into a position with this:
+        from skyfield.positionlib import build_position
+        icrs_xyz_km = [0, 0, 0] # example coordinates
+        position = build_position(icrs_xyz_km, t=ts.now())
+
+
+        Finally, Rotation Matrices:
+        When doing your own math, you might want to access the low-level 3x3 rotation matrices that define the relationhip between each coordinate reference frame and the ICRS frame.
+        To compute a rotation matric, use:
+        # 3x3 rotation matrix: ICRS ->  frame
+        R = ecliptic_frame.rotation_at(t)
+        print(R)
+
+        [[ 0 0 0]
+        [0 0 0]
+        [0 0 0]]
+        '''
+
+    def get2DCartesianCoordinates(self, satellite: Satellite, time: Time):
+        """
+        Calculate the 2D geographical coordinates (latitude and longitude) of the satellite at a given time.
 
         Args:
-            lat (float): Latitude in degrees.
-            lon  (float): Longitude in degrees.
-            elevation (float): Elevation in kilometers.
+            satellite (Satellite): The Satellite object from which to calculate the coordinates.
+            time (Time): The time at which to calculate the satellite's position.
 
         Returns:
-            np.array: The ECEF coordinates in X, Y, Z format, in kilometers.
+            tuple: A tuple containing the latitude and longitude of the satellite as Angle objects.
         """
-        a = self.controller.Earth.radius.km  # Earth's radius in km before scaling 6378.137
-        f = 1 / self.inverse_flattening
-        e_sq = 2 * f - f * f  # Eccentricity squared
+        # Compute the geocentric position of the satellite at the given time
+        geocentric_position = satellite.at(time)
 
-        scale = self.scale  # 1/1000 scale
+        # Use the Skyfield API's method to get latitude and longitude from the geocentric position
+        latitude, longitude = self.latlon_of(geocentric_position)
 
-        lat = radians(lat)
-        lon = radians(lon)
-        # Corrected radius at latitude
-        N = a / sqrt(1 - e_sq * sin(lat)**2)
-        scaled_N = N * scale  # This should be close to 6.388 if latitude is near equator
-        scaled_h = elevation * scale  # Scale the elevation to match the model scale
+        return (latitude, longitude)
 
-        x = (scaled_N + scaled_h) * cos(lat) * cos(lon)
-        y = (scaled_N + scaled_h) * cos(lat) * sin(lon)
-        z = (scaled_N + scaled_h) * sin(lat)
+    def get3DCartesianCoordinates(self, satellite: Satellite, time: Time):
+        """
+        Calculate the 3D Cartesian coordinates (x, y, z) of the satellite at a given time relative to the Earth's center using the .xyz attribute. Reference frame is GCRC.
 
-        #print(f"Scaled Earth Radius at Latitude (N): {scaled_N} km")
-        #print(f"Scaled Elevation (h): {scaled_h} km")
-        #print(f"Satellite Position - X: {x} km, Y: {y} km, Z: {z} km")
-        return np.array([x, y, z])
+        Args:
+            satellite (Satellite): The Satellite object from which to calculate the coordinates.
+            time (Time): The time at which to calculate the satellite's position.
+
+        Returns:
+            tuple: A tuple containing the x, y, z coordinates in kilometers.
+        """
+        # Compute the geocentric position of the satellite at the given time
+        geocentric_position = satellite.at(time)
+
+        # Extract the x, y, z coordinates from the position object using .position.km
+        x, y, z = geocentric_position.position.km * self.scale# .km converts to kilometers and self.scale is the scale of the Earth
+
+        # translate 90 degrees to the right to align with the x-axis
+
+
+        return (x, y, z)
 
 class TLEManager:
     """Manages TLE orbital data; Reading from .TLE files, validating Epoch, requesting new data from Celestrak, and building Satellite objects.
