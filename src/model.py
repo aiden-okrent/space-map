@@ -3,7 +3,20 @@ import datetime
 import os
 import socket
 from calendar import c
-from math import cos, radians, sin, sqrt
+from math import (
+    acos,
+    asin,
+    atan2,
+    ceil,
+    cos,
+    degrees,
+    floor,
+    pi,
+    radians,
+    sin,
+    sqrt,
+    tan,
+)
 
 import numpy as np
 from skyfield.api import Angle, Distance, EarthSatellite, Time, load, wgs84
@@ -392,6 +405,9 @@ class Earth(Geoid):
         self.van_allen_belt = self.radius.km + 640 * scale  # Inner Van Allen Belt in km
         self.upVector = np.array([0, 1, 0]) # +y aligned
 
+        self.parallels = np.arange(-90., 120., 30.) # draw parallels every 30 degree interval
+        self.meridians = np.arange(0., 420., 60.) # draw meridians every 60 degree interval
+
         self.textures_8k = {
             "earth_daymap": os.path.join(map_textures, "blue_marble_NASA_land_ocean_ice_8192.png"),
             "earth_clouds": os.path.join(map_textures, "8k_earth_clouds.jpg"),
@@ -530,17 +546,16 @@ class Earth(Geoid):
             time (Time): The time at which to calculate the satellite's position.
 
         Returns:
-            tuple: A tuple containing the latitude and longitude of the satellite as Angle objects.
+            tuple: A tuple containing the latitude and longitude of the satellite as Angle objects, and the altitude above the Earth's surface as a Distance object.
         """
         # Compute the geocentric position of the satellite at the given time
         geocentric_position = satellite.at(time)
 
         # Use the Skyfield API's method to get latitude and longitude from the geocentric position
         latitude, longitude = self.latlon_of(geocentric_position)
+        altitude = (geocentric_position.distance().km * self.scale) - self.radius.km
 
-        print(latitude, longitude)
-
-        return (latitude, longitude)
+        return (latitude, longitude, altitude)
 
     def get3DCartesianCoordinates(self, satellite: Satellite, time: Time):
         """
@@ -553,21 +568,19 @@ class Earth(Geoid):
         Returns:
             tuple: A tuple containing the x, y, z coordinates in kilometers.
         """
-        # Compute the geocentric position of the satellite at the given time
-        geocentric_position = satellite.at(time)
 
-        # Extract the x, y, z coordinates from the position object using .position.km
-        x, y, z = geocentric_position.position.km * self.scale# .km converts to kilometers and self.scale is the scale of the Earth
+        latitude, longitude, altitude = self.get2DCartesianCoordinates(satellite, time)
+        x, y, z = self.geographic_to_cartesian(latitude.radians, longitude.radians, altitude)
 
-        position = np.array([x, y, z])
+        return np.array([x, y, z])
 
-        # first rotate satellite positions 180 degrees to align with the Earth's surface correctly
-        position = position * -1
+    def geographic_to_cartesian(self, latitude, longitude, altitude):
 
-        # next invert z-axis to align with the Earth's surface correctly
-        position[2] *= -1
+        x = (altitude + self.radius.km) * cos(latitude) * cos(longitude)
+        y = (altitude + self.radius.km) * cos(latitude) * sin(longitude)
+        z = (altitude + self.radius.km) * sin(latitude)
 
-        return position
+        return x, y, z
 
 class TLEManager:
     """Manages TLE orbital data; Reading from .TLE files, validating Epoch, requesting new data from Celestrak, and building Satellite objects.

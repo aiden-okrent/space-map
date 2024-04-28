@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
     QCalendarWidget,
     QComboBox,
     QDateTimeEdit,
+    QDialog,
     QDockWidget,
     QDoubleSpinBox,
     QGroupBox,
@@ -184,12 +185,13 @@ class MainView(AbstractWindow):
         # Connect mouse event to spinbox for focus management
         self.mousePressEvent = lambda event: self.current_sat_id_spinbox.clearFocus() if self.current_sat_id_spinbox.hasFocus() else None
 
+        self.quality_combobox = QComboBox()
+        self.quality_combobox.setStyle(MyProxyStyle())
+
         # Add actions to the topBar
         self.topBar.addWidget(self.current_sat_input)
-        self.quality_Action = self.topBar.addAction("Switch Quality", self.controller.toggle_quality)
+        self.topBar.addWidget(self.quality_combobox)
         self.display_2D_map_Action = self.topBar.addAction("2D Map", self.controller.display_2D_map)
-        self.currentScene_Action = self.topBar.addAction("Switch Scene", self.controller.toggle_scene)
-        self.cameraMode_Action = self.topBar.addAction("Switch Camera Mode", self.controller.toggle_camera_mode)
 
 class TransparentOverlayView(QWidget):
     def __init__(self, controller: ControllerProtocol, globe3DView: QOpenGLWidget):
@@ -199,6 +201,7 @@ class TransparentOverlayView(QWidget):
         self.initUI()
 
     def initUI(self):
+        self.setVisible(False)
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setStyleSheet("background: transparent;")  # Set background to transparent
 
@@ -210,56 +213,50 @@ class TransparentOverlayView(QWidget):
 
         self.labels = {}
 
-        self.labels["RenderSettings"] = self.drawLabel("RenderSettings", "")
-        self.labels["CameraStats"] = self.drawLabel("CameraStats", "")
-        self.labels["CameraXYZ"] = self.drawLabel("CameraXYZ", "")
+        self.labels["Scene"] = self.drawLabel("RenderSettings", "")
+        self.labels["CameraMode"] = self.drawLabel("CameraMode", "")
         self.labels["CameraTarget"] = self.drawLabel("CameraTarget", "")
+        self.labels["2DCartesianCoordinates"] = self.drawLabel("2DCartesianCoordinates", "")
 
-
-
-    def toggleVisibility(self):
-        self.setVisible(not self.isVisible())
+    def setVisibility(self, visible):
+        self.setVisible(visible)
 
     def update(self):
         self.drawRenderSettings()
-        self.drawCameraStats()
-        self.drawCameraXYZ()
         self.drawCameraTarget()
+        self.draw2DCartesianCoordinates()
 
     def drawLabel(self, name, text):
         # Create a new label for the overlay
         label = QLabel(name, self)
-        label.setStyleSheet("color: white; font-size: 24px;")
+        label.setStyleSheet("color: white; font-size: 20px;")
         label.setText(text)
         self.layout.addWidget(label)
         return label
 
     def drawRenderSettings(self):
-        quality = self.globe3DView.getQuality()
         scene = self.globe3DView.getScene()
-        self.labels["RenderSettings"].setText(f"Quality: {quality}, Scene: {scene}")
-
-    def drawCameraStats(self):
+        self.labels["Scene"].setText(f"Scene: {scene}")
         camera_mode = self.globe3DView.camera.getCameraMode()
-        camera_distance = self.globe3DView.cameraDistance
-        camera_altitude = camera_distance - self.globe3DView.Earth.radius.km
-        self.labels["CameraStats"].setText(f"Mode: {camera_mode}\nAlt: {camera_altitude:.0f} km high")
-
-    def drawCameraXYZ(self):
-        x, y, z = self.globe3DView.cameraPosXYZ
-        self.labels["CameraXYZ"].setText(f"Camera XYZ: ({x:.1f}, {y:.1f}, {z:.1f})")
+        self.labels["CameraMode"].setText(f"Camera Mode: {camera_mode}")
 
     def drawCameraTarget(self):
         target = self.globe3DView.cameraTarget
         name = target["name"]
         position = target["position"]
-        x = f"{position[0]:.0f}"
-        y = f"{position[1]:.0f}"
-        z = f"{position[2]:.0f}"
+        x = f"{position[0]:.1f}"
+        y = f"{position[1]:.1f}"
+        z = f"{position[2]:.1f}"
 
-        self.labels["CameraTarget"].setText(f"Target: {target['name']}\nPosition: ({x}, {y}, {z})")
+        self.labels["CameraTarget"].setText(f"Target: {name} ({x}, {y}, {z})")
 
+    def draw2DCartesianCoordinates(self):
+        coords = self.controller.Earth.get2DCartesianCoordinates(self.controller.current_satellite, self.controller.Timescale.now())
+        latitude = coords[0].dstr()
+        longitude = coords[1].dstr()
+        altitude = coords[2] / self.controller.scale # Convert to km
 
+        self.labels["2DCartesianCoordinates"].setText(f"LATITUDE: {latitude}\nLONGITUDE: {longitude}\nALTITUDE: {altitude:.1f} km")
 
 class Globe3DView(QOpenGLWidget):
     """ Render a 3D globe using OpenGL, with different scenes such as GLOBE_VIEW, TRACKING_VIEW, and EXPLORE_VIEW."""
@@ -273,7 +270,7 @@ class Globe3DView(QOpenGLWidget):
         self.overlay = TransparentOverlayView(self.controller, self)
         self.overlay.setGeometry(self.rect())
 
-        self.quality = self.RenderQuality.DEBUG
+        self.quality = self.RenderQuality.LOW
         self.current_scene = self.SceneView
         self.setScene(self.SceneView.EXPLORE_VIEW)
 
@@ -329,8 +326,8 @@ class Globe3DView(QOpenGLWidget):
         glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, (1.0, 1.0, 1.0, 1.0)) # specular: white
         glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 100.0) # shininess: 100 MAX
 
-    def toggleOverlayVisibility(self):
-        return self.overlay.toggleVisibility()
+    def setOverlayVisibility(self, visible):
+        return self.overlay.setVisibility(visible)
 
     def setCameraTarget(self, target, position):
         self.cameraTarget = {"name": target, "position": position}
@@ -355,7 +352,15 @@ class Globe3DView(QOpenGLWidget):
     def drawScene_GLOBE_VIEW(self):
         self.setCameraTarget("Earth", [0, 0, 0])
 
-        self.drawXYZAxis()
+        self.drawEarth()
+        if self.controller.isDebug:
+            self.drawXYZAxis()
+            self.drawParallels()
+            self.drawMeridians()
+        elif self.quality == self.RenderQuality.LOW:
+            self.drawPoles()
+        elif self.quality == self.RenderQuality.HIGH:
+            self.drawPoles()
 
         glPushMatrix()
         self.drawEarth()
@@ -371,8 +376,8 @@ class Globe3DView(QOpenGLWidget):
         self.drawEarth()
         self.drawPoles()
         if self.quality == self.RenderQuality.DEBUG:
-            self.drawEquator()
-            self.drawPrimeMeridian()
+            #self.drawEquator()
+            #self.drawPrimeMeridian()
             self.drawXYZAxis()
 
         self.drawSatellite(self.satellite_position)
@@ -385,13 +390,24 @@ class Globe3DView(QOpenGLWidget):
         satellite = self.controller.current_satellite # get the current satellite object to track
         self.satellite_position = self.Earth.get3DCartesianCoordinates(satellite, self.controller.Timescale.now())
 
+        glEnable(GL_LIGHTING)
+
         glPushMatrix()
+
+        glRotatef(-90, 1, 0, 0) # Align Earth's North Pole with the z-axis
+        glRotatef(-90, 0, 0, 1) # Align Earth's Prime Meridian with the x-axis
+
         self.drawEarth()
-        self.drawPoles()
-        if self.quality == self.RenderQuality.DEBUG:
-            self.drawEquator()
-            self.drawPrimeMeridian()
+        if self.controller.isDebug:
             self.drawXYZAxis()
+            self.drawParallels()
+            self.drawMeridians()
+        elif self.quality == self.RenderQuality.LOW:
+            self.drawPoles()
+        elif self.quality == self.RenderQuality.HIGH:
+            self.drawPoles()
+            #self.drawClouds()
+            #self.drawKarmanLine()
 
         self.drawSatellite(self.satellite_position)
         glPopMatrix()
@@ -412,10 +428,10 @@ class Globe3DView(QOpenGLWidget):
         glPopMatrix()
 
         glPushMatrix()
-        surface_position = -normalize(position) * self.controller.Earth.radius.km
+        surface_position = normalize(position) * self.controller.Earth.radius.km
         glTranslatef(*surface_position)
-        glColor4f(1.0, 0, 0, 1.0) # Red color for the satellite
-        gluSphere(quadric, 0.1, self.earth_triangles, self.earth_triangles)
+        glColor4f(0, 1.0, 0, 1.0) # Green color for the satellite's surface position
+        gluSphere(quadric, 0.05, self.earth_triangles, self.earth_triangles)
         glPopMatrix()
 
         glLineWidth(2)
@@ -435,8 +451,8 @@ class Globe3DView(QOpenGLWidget):
         # draw clouds
         glDepthMask(GL_FALSE)
         glDisable(GL_LIGHTING)
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE)
-        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        #glEnable(GL_BLEND)
 
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, self.earth_clouds)
@@ -450,12 +466,14 @@ class Globe3DView(QOpenGLWidget):
         glDisable(GL_BLEND)
         glEnable(GL_LIGHTING)
         glDepthMask(GL_TRUE)
+        glBlendFunc(GL_ONE, GL_ZERO)
         glColor4f(1.0, 1.0, 1.0, 1)
+
     def drawKarmanLine(self):
         # draw the karman line, official boundary of space at 100km
         glDepthMask(GL_FALSE)
         glDisable(GL_LIGHTING)
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glEnable(GL_BLEND)
         glColor4f(1.0, 1.0, 1.0, 0.5)
 
@@ -467,7 +485,8 @@ class Globe3DView(QOpenGLWidget):
         glDisable(GL_BLEND)
         glEnable(GL_LIGHTING)
         glDepthMask(GL_TRUE)
-        glColor4f(1.0, 1.0, 1.0, 1)
+        glBlendFunc(GL_ONE, GL_ZERO)
+        glColor4f(1.0, 1.0, 1.0, 1.0)
 
     def setScene(self, scene):
         # Set the current scene
@@ -477,8 +496,6 @@ class Globe3DView(QOpenGLWidget):
             self.to_TRACKING_VIEW()
         elif scene == self.SceneView.EXPLORE_VIEW:
             self.to_EXPLORE_VIEW()
-
-        #self.current_scene = scene
 
     def to_GLOBE_VIEW(self):
         self.camera.setCameraMode(self.camera.CameraMode.STATIC)
@@ -503,11 +520,21 @@ class Globe3DView(QOpenGLWidget):
         EXPLORE_VIEW = 2
 
         def __str__(self):
-            return self.name
+            return self.name.capitalize()
 
     def loadTextures(self, quality):
-        if quality == self.RenderQuality.LOW:
-            print("Setting quality to low")
+
+        if quality == self.RenderQuality.DEBUG:
+            print("DEBUG MODE")
+            glShadeModel(GL_FLAT)
+            self.earth_triangles = 16
+            self.lighting_enabled = False
+            self.earth_daymap = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["earth_daymap"])
+            self.stars_milky_way = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["stars_milky_way"])
+            self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["earth_clouds"])
+
+
+        elif quality == self.RenderQuality.LOW:
             glShadeModel(GL_FLAT)
             self.earth_triangles = 16
             self.lighting_enabled = False
@@ -516,22 +543,12 @@ class Globe3DView(QOpenGLWidget):
             self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_2k["earth_clouds"])
 
         elif quality == self.RenderQuality.HIGH:
-            print("Setting quality to high")
             glShadeModel(GL_SMOOTH)
-            self.earth_triangles = 32
+            self.earth_triangles = 128
             self.lighting_enabled = True
             self.earth_daymap = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["earth_daymap"])
             self.stars_milky_way = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["stars_milky_way"])
             self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["earth_clouds"])
-
-        elif quality == self.RenderQuality.DEBUG:
-            print("Setting quality to debug")
-            glShadeModel(GL_FLAT)
-            self.earth_triangles = 16
-            self.lighting_enabled = False
-            self.earth_daymap = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["earth_daymap"])
-            self.stars_milky_way = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["stars_milky_way"])
-            self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["earth_clouds"])
 
     def unpackImageToTexture(self, imagePath):
         # Load a texture from an image file
@@ -561,9 +578,6 @@ class Globe3DView(QOpenGLWidget):
     def drawEarth(self):
         #self.drawSphereManual()
 
-        glRotatef(-90, 1, 0, 0) # Align Earth's North Pole with the z-axis
-        glRotatef(-90, 0, 0, 1) # Align Earth's Prime Meridian with the x-axis
-
         glColor4f(1.0, 1.0, 1.0, 1.0) # Set base color to white
         glEnable(GL_TEXTURE_2D)
         glActiveTexture(GL_TEXTURE0)
@@ -581,7 +595,6 @@ class Globe3DView(QOpenGLWidget):
         gluSphere(quadric, self.controller.Earth.radius.km, self.earth_triangles, self.earth_triangles)
         gluDeleteQuadric(quadric)
         glColor4f(1.0, 1.0, 1.0, 1.0) # Reset color
-
 
         # Reset the texture matrix to avoid affecting other textures
         glMatrixMode(GL_TEXTURE)
@@ -615,7 +628,7 @@ class Globe3DView(QOpenGLWidget):
 
     def drawEquator(self):
         glLineWidth(5)
-        glColor4f(1.0, 0.0, 0.0, 1.0)
+        glColor4f(1.0, 1.0, 1.0, 1.0)
         # Draw Equator as a loop around the Earth
         glBegin(GL_LINE_LOOP)
         for i in range(0, 360):
@@ -627,7 +640,7 @@ class Globe3DView(QOpenGLWidget):
 
     def drawPrimeMeridian(self):
         glLineWidth(5)
-        glColor4f(1.0, 1.0, 1.0, 1.0)
+        glColor4f(1.0, 0.0, 0.0, 1.0)
         # drawPrimeMeridian as a loop around the Earth
         glBegin(GL_LINE_LOOP)
         for i in range(0, 360):
@@ -636,6 +649,48 @@ class Globe3DView(QOpenGLWidget):
             glVertex3f(x, 0, z)
         glEnd()
         glColor4f(1.0, 1.0, 1.0, 1.0)
+
+    def drawMeridians(self):
+        longitudes = self.Earth.meridians
+        for longitude in longitudes:
+            glPushMatrix()
+            if longitude == 0: # color the prime meridian red
+                glLineWidth(3)
+                glColor4f(1.0, 0.0, 0.0, 1.0)
+            elif longitude == 90: # color the 90 degree meridian green
+                glLineWidth(3)
+                glColor4f(0.0, 1.0, 0.0, 1.0)
+            else: # color all other meridians white
+                glLineWidth(2)
+                glColor4f(1.0, 1.0, 1.0, 0.5)
+            glRotatef(longitude, 0, 0, 1)
+            glBegin(GL_LINE_LOOP)
+            for i in range(0, 360):
+                x = (self.controller.Earth.radius.km + .1) * cos(radians(i))
+                z = (self.controller.Earth.radius.km + .1) * sin(radians(i))
+                glVertex3f(x, 0, z)
+            glEnd()
+            glPopMatrix()
+
+    def drawParallels(self):
+        latitudes = self.Earth.parallels
+        for latitude in latitudes:
+            glPushMatrix()
+            glLineWidth(2)
+            glColor4f(1.0, 1.0, 1.0, 0.5) # Set color to white with 50% transparency to make parallels semi-transparent
+
+            # Calculate the radius and z position for each parallel
+            radius = (self.controller.Earth.radius.km + .1) * cos(radians(latitude))
+            z = self.controller.Earth.radius.km * sin(radians(latitude))
+
+            glBegin(GL_LINE_LOOP)
+            for i in range(360):
+                x = radius * cos(radians(i))
+                y = radius * sin(radians(i))
+                glVertex3f(x, y, z)  # Use the calculated z-value to position the parallel at the correct latitude
+            glEnd()
+            glPopMatrix()
+
 
     def drawXYZAxis(self):
         axisLength = self.controller.Earth.radius.km * 1.5  # Make axes slightly longer than the radius
@@ -724,6 +779,7 @@ class Globe3DView(QOpenGLWidget):
 
         glPopMatrix()
 
+
     def drawSkybox(self):
         """ Draw a skybox around the scene """
         glDisable(GL_LIGHTING) # Disable lighting for the skybox
@@ -757,11 +813,12 @@ class Globe3DView(QOpenGLWidget):
         """ Set the render quality
 
         Args:
-            quality (RenderQuality): The quality of the rendering: LOW or HIGH
+            quality (RenderQuality): The quality of the rendering: LOW or HIGH or DEBUG
         """
         if isinstance(quality, int):
             quality = self.RenderQuality(quality)
         self.quality = quality
+        print(f"Setting render quality to {quality}")
         self.loadTextures(quality)
     def getQuality(self):
         """ Return current render quality setting
@@ -772,9 +829,9 @@ class Globe3DView(QOpenGLWidget):
         return self.quality
     class RenderQuality(Enum):
         """ Enum for the different render qualities: LOW, HIGH, or DEBUG """
-        LOW = 0
-        HIGH = 1
-        DEBUG = 2
+        DEBUG = 0
+        LOW = 1
+        HIGH = 2
 
         def __str__(self):
             return self.name.capitalize()
@@ -867,7 +924,7 @@ class Globe3DView(QOpenGLWidget):
                 # then, calculate the camera position with cross product
                 #camera_pos = np.cross(normalized_target_pos, [0, 0, 1])
 
-                gluLookAt(*target_pos, 0,0,0, *self.controller.Earth.upVector)
+                gluLookAt(*target_pos, 0,0,0, 0,0,1)
             elif self.mode == self.CameraMode.ORBIT:
                 target = self.globe3DView.cameraTarget
                 target_pos = target["position"]
@@ -888,6 +945,8 @@ class Globe3DView(QOpenGLWidget):
             ORBIT = 1
             FOLLOW = 2
 
+            def __str__(self):
+                return self.name.capitalize()
 
 
 # Utility functions
