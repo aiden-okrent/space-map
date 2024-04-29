@@ -1,9 +1,11 @@
 import glob
 import os
 from math import cos, e, pi, radians, sin, sqrt
+from re import T
 from typing import TYPE_CHECKING
 
 import numpy as np
+from matplotlib.pylab import f
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from PySide6 import QtCore
@@ -23,6 +25,7 @@ For space-map, the View has several components:
 
 from enum import Enum
 
+from PySide6 import QtSvg
 from PySide6.QtCore import (
     QDateTime,
     QEvent,
@@ -33,7 +36,7 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
 )
-from PySide6.QtGui import QFont, QIntValidator
+from PySide6.QtGui import QFont, QIntValidator, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -263,7 +266,7 @@ class Globe3DView(QOpenGLWidget):
     def __init__(self, controller: ControllerProtocol, earth):
         super().__init__()
         self.controller = controller
-        self.renderDistance = 33000
+        self.renderDistance = 1000
         self.camera = self.Camera(controller, self, earth)
         self.Earth = earth
 
@@ -282,7 +285,7 @@ class Globe3DView(QOpenGLWidget):
 
         # camera orbit settings
         self.lastPos = QPoint()
-        self.cameraDistance = 0
+        self.cameraDistance = 20
         self.theta = 0
         self.phi = 0
         self.maxCameraAltitude = self.Earth.radius.km * 50
@@ -293,9 +296,28 @@ class Globe3DView(QOpenGLWidget):
 
         self.orbitDistance = self.Earth.radius.km + 10
 
+        self.satellite_label = QLabel(self)
+        self.satellite_label.setFixedSize(20, 20)
+        self.satellite_label.setPixmap(self.recolorSVG("src/assets/icons/gis--satellite.svg", Qt.GlobalColor.white))
+        self.controller.MainView.setWindowIcon(self.recolorSVG("src/assets/icons/gis--network.svg", Qt.GlobalColor.white))
+
         self.mousePressEvent = self.mousePressEvent
         self.mouseMoveEvent = self.mouseMoveEvent
         self.mouseReleaseEvent = self.mouseReleaseEvent
+
+
+    def recolorSVG(self, path, color):
+        renderer = QtSvg.QSvgRenderer(path)
+        pixmap = QPixmap(self.satellite_label.size())
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+
+        painter.fillRect(pixmap.rect(), color)
+        painter.end()
+        return pixmap
 
 
     def run(self):
@@ -305,6 +327,7 @@ class Globe3DView(QOpenGLWidget):
     def initializeGL(self):
 
         glEnable(GL_DEPTH_TEST) # Enable depth testing
+        glDepthFunc(GL_LEQUAL) # Set the depth function to less than or equal
         glEnable(GL_TEXTURE_2D) # Enable texture mapping
         glEnable(GL_LIGHTING) # Enable lighting
         glEnable(GL_LIGHT0) # Enable light source 0
@@ -376,8 +399,6 @@ class Globe3DView(QOpenGLWidget):
         self.drawEarth()
         self.drawPoles()
         if self.quality == self.RenderQuality.DEBUG:
-            #self.drawEquator()
-            #self.drawPrimeMeridian()
             self.drawXYZAxis()
 
         self.drawSatellite(self.satellite_position)
@@ -415,10 +436,41 @@ class Globe3DView(QOpenGLWidget):
 
     def drawSatellite(self, position):
         """ Draw the satellite at the given position. """
-        glDisable(GL_BLEND)
+
         glEnable(GL_LIGHTING)
         glDepthMask(GL_TRUE)
 
+        # use gluProject to convert 3D coordinates to 2D screen coordinates
+        viewport = glGetIntegerv(GL_VIEWPORT)
+        modelview = glGetDoublev(GL_MODELVIEW_MATRIX)
+        projection = glGetDoublev(GL_PROJECTION_MATRIX)
+
+        screen_coords = self.get2DScreenCoordsFrom3D(*position)
+        x = screen_coords[0]
+        y = self.height() - screen_coords[1]
+        depth_buffer = glReadPixels(x, y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)[0][0] # set the depth buffer value at the satellite's position
+
+        # offset the label to be centered on the satellite's position
+        x -= self.satellite_label.width() / 2
+        y -= self.satellite_label.height() / 2
+
+        # Extract camera position and calculate the vector to the satellite
+        cam_position = np.linalg.inv(np.array(modelview)).reshape(4,4).T[:3, 3]
+        vector_to_satellite = np.array(position) - cam_position
+        forward_direction = -np.array(modelview)[:3, 2]
+        dot_product = np.dot(forward_direction, vector_to_satellite)
+
+        raycast = self.is_occluded(cam_position, position, self.Earth)
+
+        print(raycast)
+        if dot_product > 1 and not raycast:
+            self.satellite_label.move(x, y)
+            self.satellite_label.setVisible(True)
+        else:
+            self.satellite_label.setVisible(False)
+
+
+        '''
         glColor4f(1.0, 0, 0, 1.0) # Red color for the satellite
         glPushMatrix()
         glTranslatef(*position)
@@ -426,27 +478,81 @@ class Globe3DView(QOpenGLWidget):
         gluQuadricTexture(quadric, GL_FALSE)
         gluSphere(quadric, 0.1, self.earth_triangles, self.earth_triangles)
         glPopMatrix()
+        '''
 
-        glPushMatrix()
-        surface_position = normalize(position) * self.controller.Earth.radius.km
-        glTranslatef(*surface_position)
-        glColor4f(0, 1.0, 0, 1.0) # Green color for the satellite's surface position
-        gluSphere(quadric, 0.05, self.earth_triangles, self.earth_triangles)
-        glPopMatrix()
+        if self.controller.isDebug:
+            glPushMatrix()
+            surface_position = normalize(position) * self.controller.Earth.radius.km
+            glTranslatef(*surface_position)
+            glColor4f(1.0, 1.0, 1.0, 1.0)
+            quadric = gluNewQuadric()
+            gluSphere(quadric, 0.05, self.earth_triangles, self.earth_triangles)
+            glPopMatrix()
 
-        glLineWidth(2)
-        glPushMatrix() #draw a straight line that points through the center of the earth
-        glBegin(GL_LINES)
-        glColor4f(1.0, 0.5, 0, 1.0) # Orange color for the line
-        glVertex3f(*position)
-        glVertex3f(0,0,0)
-        glEnd()
-        glPopMatrix()
+            glLineWidth(2)
+            glPushMatrix() #draw a straight line that points through the center of the earth
+            glBegin(GL_LINES)
+            glColor4f(1.0, 1.0, 1.0, 1.0)
+            glVertex3f(*position)
+            glVertex3f(0,0,0)
+            glEnd()
+            glPopMatrix()
 
-        # reset color, lighting, and matrix
+        # reset color
         glColor4f(1.0, 1.0, 1.0, 1.0)
-        glEnable(GL_LIGHTING)
-        glDepthMask(GL_TRUE)
+
+    def get2DScreenCoordsFrom3D(self, x, y, z):
+        """ Convert 3D coordinates to 2D screen coordinates."""
+        viewport = glGetIntegerv(GL_VIEWPORT)
+        modelview = glGetDoublev(GL_MODELVIEW_MATRIX)
+        projection = glGetDoublev(GL_PROJECTION_MATRIX)
+
+        screen_coords = gluProject(x, y, z, modelview, projection, viewport)
+        screen_coords = [int(coord) for coord in screen_coords]
+
+        return screen_coords
+
+
+    def intersect_ray_sphere(self, ray_origin, ray_direction, sphere_center, sphere_radius):
+        oc = sphere_center - ray_origin
+        tca = np.dot(oc, ray_direction)
+        d2 = np.dot(oc, oc) - tca * tca
+        if d2 > sphere_radius * sphere_radius:
+            return None  # No intersection
+        thc = np.sqrt(sphere_radius * sphere_radius - d2)
+        t0 = tca - thc
+        t1 = tca + thc
+        if t0 > t1:
+            t0, t1 = t1, t0
+        if t0 < 0:
+            t0 = t1
+            if t0 < 0:
+                return None
+        # Calculate the intersection point
+        intersection_point = ray_origin + ray_direction * t0
+        return intersection_point
+
+    def is_occluded(self, camera_position, target_position, sphere):
+        ray_origin, ray_direction = self.get_ray(camera_position, target_position)
+        intersection_point = self.intersect_ray_sphere(ray_origin, ray_direction, sphere.center, sphere.radius.km)
+        if intersection_point is not None:
+            # Calculate vector to the satellite and to the intersection point
+            vector_to_satellite = np.array(target_position) - ray_origin
+            vector_to_intersection = intersection_point - ray_origin
+
+            # Check if the intersection point is closer than the satellite
+            distance_to_satellite = np.linalg.norm(vector_to_satellite)
+            distance_to_intersection = np.linalg.norm(vector_to_intersection)
+
+            return distance_to_intersection < distance_to_satellite
+        return False
+
+
+    def get_ray(self, camera_position, target_position):
+        direction = np.array(target_position) - np.array(camera_position)
+        normalized_direction = direction / np.linalg.norm(direction)
+        return camera_position, normalized_direction
+
     def drawClouds(self):
         # draw clouds
         glDepthMask(GL_FALSE)
@@ -697,7 +803,6 @@ class Globe3DView(QOpenGLWidget):
         lineWidth = 5
 
         glEnable(GL_LIGHTING)
-        glDepthMask(GL_TRUE)
 
         # X-Axis (Red)
         glPushMatrix()
@@ -794,7 +899,7 @@ class Globe3DView(QOpenGLWidget):
         glScalef(-1, 1, 1)
         quadric = gluNewQuadric()
         gluQuadricTexture(quadric, GL_TRUE)
-        gluSphere(quadric, 16000, 32, 32)
+        gluSphere(quadric, self.Earth.radius.km * 100, 32, 32)
         glPopMatrix()
 
         glDepthMask(GL_TRUE) # Re-enable writing to the depth buffer
@@ -806,7 +911,7 @@ class Globe3DView(QOpenGLWidget):
         glViewport(0, 0, width, height)
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
-        gluPerspective(45, width / float(height), 1, self.renderDistance)
+        gluPerspective(45, width / float(height), 0.1, self.renderDistance)
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
     def setQuality(self, quality):
@@ -863,11 +968,10 @@ class Globe3DView(QOpenGLWidget):
     def wheelEvent(self, event: QMouseEvent):
         if self.camera.getCameraMode() == self.camera.CameraMode.ORBIT:
             scrollDistance = event.angleDelta().y()
-            t = (self.cameraDistance - self.minCameraAltitude) / (self.maxCameraAltitude - self.minCameraAltitude)
-            interpolatedScrollDistance = scrollDistance * t
-            self.cameraDistance = self.cameraDistance - interpolatedScrollDistance
-            #self.updateOrbitCamera()
-            #self.update()
+            self.cameraDistance -= scrollDistance / 120
+            self.updateOrbitCamera()
+            self.update()
+
 
     def updateOrbitCamera(self):
         if self.camera.getCameraMode() == self.camera.CameraMode.ORBIT:
@@ -888,9 +992,9 @@ class Globe3DView(QOpenGLWidget):
 
             target_pos = self.cameraTarget["position"]
 
-            x = self.orbitDistance * sin(theta_rad) * cos(phi_rad) + target_pos[0]
-            y = self.orbitDistance * sin(phi_rad) + target_pos[1]
-            z = self.orbitDistance * cos(theta_rad) * cos(phi_rad) + target_pos[2]
+            x = self.cameraDistance * sin(theta_rad) * cos(phi_rad) + target_pos[0]
+            y = self.cameraDistance * sin(phi_rad) + target_pos[1]
+            z = self.cameraDistance * cos(theta_rad) * cos(phi_rad) + target_pos[2]
             self.cameraPosXYZ = [x, y, z]
             self.update()
 

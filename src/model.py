@@ -408,6 +408,8 @@ class Earth(Geoid):
         self.parallels = np.arange(-90., 120., 30.) # draw parallels every 30 degree interval
         self.meridians = np.arange(0., 420., 60.) # draw meridians every 60 degree interval
 
+        self.center = np.array([0, 0, 0]) # center of the Earth
+
         self.textures_8k = {
             "earth_daymap": os.path.join(map_textures, "blue_marble_NASA_land_ocean_ice_8192.png"),
             "earth_clouds": os.path.join(map_textures, "8k_earth_clouds.jpg"),

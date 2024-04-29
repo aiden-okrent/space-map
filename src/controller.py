@@ -34,6 +34,7 @@ class ApplicationController(ControllerProtocol):
 
         # set the current satellite to the ISS for debugging
         self.setCurrentSatellite(self.TLEManager.getSatellite('25544'))
+        self.MainView.current_sat_id_spinbox.setValue(25544)
 
         self.MainView.current_sat_id_spinbox.editingFinished.connect(self.track_Satellite)
         self.refresh_sat_combobox()
@@ -56,11 +57,11 @@ class ApplicationController(ControllerProtocol):
         self.MainView.satellite_combobox.clear()
         satellites = self.get_satellite_dict()
         # first, find the iss and put it at the top. use 25544 as id
-        self.MainView.current_sat_id_spinbox.setValue(25544)
         self.MainView.satellite_combobox.addItem('---------')
         self.MainView.satellite_combobox.addItem('ISS (ZARYA)')
+        self.MainView.satellite_combobox.addItem('GOES 16')
         for sat_name in satellites:
-            if sat_name == 'ISS (ZARYA)':
+            if sat_name == 'ISS (ZARYA)' or sat_name == 'GOES 16':
                 continue
             self.MainView.satellite_combobox.addItem(sat_name)
 
