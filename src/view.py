@@ -1,11 +1,9 @@
-import glob
 import os
+from datetime import timedelta
 from math import cos, e, pi, radians, sin, sqrt
-from re import T
 from typing import TYPE_CHECKING
 
 import numpy as np
-from matplotlib.pylab import f
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from PySide6 import QtCore
@@ -36,7 +34,7 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
 )
-from PySide6.QtGui import QFont, QIntValidator, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QIntValidator, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -68,7 +66,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from skyfield.toposlib import GeographicPosition
-from skyfield.units import Angle, Distance
+from skyfield.units import Angle, Distance, Velocity
 
 from controller_protocol import ControllerProtocol
 
@@ -220,6 +218,8 @@ class TransparentOverlayView(QWidget):
         self.labels["CameraMode"] = self.drawLabel("CameraMode", "")
         self.labels["CameraTarget"] = self.drawLabel("CameraTarget", "")
         self.labels["2DCartesianCoordinates"] = self.drawLabel("2DCartesianCoordinates", "")
+        self.labels["CurrentTime"] = self.drawLabel("CurrentTime", "")
+        self.labels["TargetSunlit"] = self.drawLabel("TargetSunlit", "")
 
     def setVisibility(self, visible):
         self.setVisible(visible)
@@ -228,6 +228,9 @@ class TransparentOverlayView(QWidget):
         self.drawRenderSettings()
         self.drawCameraTarget()
         self.draw2DCartesianCoordinates()
+        self.drawCurrentTime()
+        self.drawTargetSunlit()
+
 
     def drawLabel(self, name, text):
         # Create a new label for the overlay
@@ -261,14 +264,27 @@ class TransparentOverlayView(QWidget):
 
         self.labels["2DCartesianCoordinates"].setText(f"LATITUDE: {latitude}\nLONGITUDE: {longitude}\nALTITUDE: {altitude:.1f} km")
 
+    def drawCurrentTime(self):
+        # current time in .est
+        time = self.controller.local_time
+        self.labels["CurrentTime"].setText(f"Current Time: {time}")
+
+    def drawTargetSunlit(self):
+        target = self.controller.current_satellite
+        isSunlit = self.controller.Earth.isSunlit(target, self.controller.Timescale.now())
+        self.labels["TargetSunlit"].setText(f"Sunlit: {isSunlit}")
+
+
 class Globe3DView(QOpenGLWidget):
     """ Render a 3D globe using OpenGL, with different scenes such as GLOBE_VIEW, TRACKING_VIEW, and EXPLORE_VIEW."""
     def __init__(self, controller: ControllerProtocol, earth):
         super().__init__()
         self.controller = controller
-        self.renderDistance = 1000
+        self.renderDistance = Distance.au(2.5).km * self.controller.scale
         self.camera = self.Camera(controller, self, earth)
         self.Earth = earth
+
+        self.ts = self.controller.Timescale
 
         self.overlay = TransparentOverlayView(self.controller, self)
         self.overlay.setGeometry(self.rect())
@@ -294,10 +310,13 @@ class Globe3DView(QOpenGLWidget):
         self.cameraPosXYZ = [0, 0, 20]
         self.cameraTarget = {"name": "", "position": [0, 0, 0]}
 
+        self.orbit_vertices = []
+
         self.orbitDistance = self.Earth.radius.km + 10
 
         self.satellite_label = QLabel(self)
         self.satellite_label.setFixedSize(20, 20)
+        color = QColor(255, 0, 0)
         self.satellite_label.setPixmap(self.recolorSVG("src/assets/icons/gis--satellite.svg", Qt.GlobalColor.white))
         self.controller.MainView.setWindowIcon(self.recolorSVG("src/assets/icons/gis--network.svg", Qt.GlobalColor.white))
 
@@ -337,7 +356,7 @@ class Globe3DView(QOpenGLWidget):
         self.loadTextures(self.quality) # Set the textures based on the quality
 
         # sun light0 settings
-        sun_position = np.array([-75, 100, 100]) # above and to the right of the Earth
+        sun_position = np.array([Distance.au(1.0).km, 0, 0]) * self.controller.scale
         glLightfv(GL_LIGHT0, GL_POSITION, [sun_position[0], sun_position[1], sun_position[2], 0])
         glLightfv(GL_LIGHT0, GL_AMBIENT, [0.2, 0.2, 0.2, 1]) # ambient: gray
         glLightfv(GL_LIGHT0, GL_DIFFUSE, [1.0, 1.0, 0.8, 1]) # diffuse: yellow
@@ -347,7 +366,7 @@ class Globe3DView(QOpenGLWidget):
         glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, (0.3, 0.3, 0.3, 1.0)) # ambient: gray
         glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, (0.6, 0.6, 0.6, 1.0)) # diffuse: gray
         glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, (1.0, 1.0, 1.0, 1.0)) # specular: white
-        glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 100.0) # shininess: 100 MAX
+        glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 50.0) # shininess: 100 MAX
 
     def setOverlayVisibility(self, visible):
         return self.overlay.setVisibility(visible)
@@ -361,10 +380,19 @@ class Globe3DView(QOpenGLWidget):
         self.overlay.update()
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT) # Clear the color and depth buffers
         glLoadIdentity() # Reset the modelview matrix to the identity matrix
-        self.drawSkybox()
+
+        glEnable(GL_LIGHTING)
+        glColor4f(1.0, 1.0, 1.0, 1.0) # Set base color to white
+        glEnable(GL_TEXTURE_2D)
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self.earth_daymap)
+        glMatrixMode(GL_MODELVIEW)
 
         # draw the current scene
         self.camera.update()
+        self.drawScene_EXPLORE_VIEW()
+        return
+
         if self.current_scene == self.SceneView.GLOBE_VIEW:
             self.drawScene_GLOBE_VIEW()
         if self.current_scene == self.SceneView.TRACKING_VIEW:
@@ -373,68 +401,85 @@ class Globe3DView(QOpenGLWidget):
             self.drawScene_EXPLORE_VIEW()
 
     def drawScene_GLOBE_VIEW(self):
-        self.setCameraTarget("Earth", [0, 0, 0])
-
-        self.drawEarth()
-        if self.controller.isDebug:
-            self.drawXYZAxis()
-            self.drawParallels()
-            self.drawMeridians()
-        elif self.quality == self.RenderQuality.LOW:
-            self.drawPoles()
-        elif self.quality == self.RenderQuality.HIGH:
-            self.drawPoles()
-
-        glPushMatrix()
-        self.drawEarth()
-        glPopMatrix()
+        return
 
     def drawScene_TRACKING_VIEW(self):
-        satellite = self.controller.current_satellite # get the current satellite object to track
-        self.satellite_position = self.Earth.get3DCartesianCoordinates(satellite, self.controller.Timescale.now())
-        self.frame_count += 1
-        self.setCameraTarget(satellite.name, self.satellite_position)
-
-        glPushMatrix()
-        self.drawEarth()
-        self.drawPoles()
-        if self.quality == self.RenderQuality.DEBUG:
-            self.drawXYZAxis()
-
-        self.drawSatellite(self.satellite_position)
-        glPopMatrix()
+        return
 
 
     def drawScene_EXPLORE_VIEW(self):
         self.setCameraTarget("Earth", [0, 0, 0])
 
         satellite = self.controller.current_satellite # get the current satellite object to track
-        self.satellite_position = self.Earth.get3DCartesianCoordinates(satellite, self.controller.Timescale.now())
 
-        glEnable(GL_LIGHTING)
-
-        glPushMatrix()
-
-        glRotatef(-90, 1, 0, 0) # Align Earth's North Pole with the z-axis
-        glRotatef(-90, 0, 0, 1) # Align Earth's Prime Meridian with the x-axis
-
-        self.drawEarth()
         if self.controller.isDebug:
             self.drawXYZAxis()
+
+        glRotatef(-90, 1, 0, 0) # Align Earth's North Pole with the z-axis
+        self.drawSkybox()
+        glEnable(GL_LIGHTING)
+        glColor4f(1.0, 1.0, 1.0, 1.0) # Set base color to white
+        glEnable(GL_TEXTURE_2D)
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self.earth_daymap)
+        glMatrixMode(GL_MODELVIEW)
+        self.drawSun()
+        #glRotatef(-90, 0, 0, 1) # Align Earth's Prime Meridian with the x-axis
+
+        glRotatef(self.Earth.axial_tilt, 0, 1, 0) # Rotate the Earth's axial tilt
+        self.drawSatellite(satellite, epoch=self.controller.Timescale.now(), color=QColor(255, 255, 255))
+        glColor4f(1.0, 0, 0, 0.3) # Red color for the satellite's orbit
+        self.drawSatelliteOrbit(satellite, self.orbit_vertices)
+
+
+        rotation = self.Earth.calculateRotation(self.controller.Timescale.now())
+        glRotatef(rotation, 0, 0, 1) # Rotate the Earth around the z-axis to simulate the Earth's rotation
+
+        self.drawEarth()
+
+        if self.controller.isDebug:
             self.drawParallels()
             self.drawMeridians()
-        elif self.quality == self.RenderQuality.LOW:
+
+        if self.quality == self.RenderQuality.LOW:
             self.drawPoles()
         elif self.quality == self.RenderQuality.HIGH:
             self.drawPoles()
-            #self.drawClouds()
-            #self.drawKarmanLine()
 
-        self.drawSatellite(self.satellite_position)
-        glPopMatrix()
+    def drawSatelliteOrbit(self, satellite, vertices):
+        glDisable(GL_LIGHTING)
+        glLineWidth(2)
 
 
-    def drawSatellite(self, position):
+        glBegin(GL_LINE_STRIP)
+        for vertex in vertices:
+            glVertex3f(*vertex)
+        glEnd()
+
+
+        glEnable(GL_LIGHTING)
+        glColor4f(1.0, 1.0, 1.0, 1.0) # Reset color
+
+
+
+    def calcSatelliteOrbit(self, satellite, epoch, hours_behind=0, hours_ahead=2, increment=10):
+        """ Calculate the satellite's orbit as an elliptical path around the Earth by calculating the satellite's position in the next 4 hours every 15 mins and connecting the dots. """
+
+        self.orbit_vertices = []  # List to store the vertices of the orbit
+
+        times = np.arange(-hours_behind * 60, hours_ahead * 60, increment)
+
+        for minute in times:
+            time = epoch + timedelta(minutes=int(minute))
+            position = self.Earth.getECICoordinates(satellite, time)
+
+            self.orbit_vertices.append(position)  # Add the position to the orbit vertices list
+
+        return self.orbit_vertices
+
+
+
+    def drawSatellite(self, satellite, epoch, color):
         """ Draw the satellite at the given position. """
 
         glEnable(GL_LIGHTING)
@@ -445,10 +490,11 @@ class Globe3DView(QOpenGLWidget):
         modelview = glGetDoublev(GL_MODELVIEW_MATRIX)
         projection = glGetDoublev(GL_PROJECTION_MATRIX)
 
+        position = self.Earth.getECICoordinates(satellite, epoch)
+
         screen_coords = self.get2DScreenCoordsFrom3D(*position)
         x = screen_coords[0]
         y = self.height() - screen_coords[1]
-        depth_buffer = glReadPixels(x, y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT)[0][0] # set the depth buffer value at the satellite's position
 
         # offset the label to be centered on the satellite's position
         x -= self.satellite_label.width() / 2
@@ -459,26 +505,16 @@ class Globe3DView(QOpenGLWidget):
         vector_to_satellite = np.array(position) - cam_position
         forward_direction = -np.array(modelview)[:3, 2]
         dot_product = np.dot(forward_direction, vector_to_satellite)
-
         raycast = self.is_occluded(cam_position, position, self.Earth)
 
-        print(raycast)
+        self.satellite_label.setPixmap(self.recolorSVG("src/assets/icons/gis--satellite.svg", color))
+
         if dot_product > 1 and not raycast:
             self.satellite_label.move(x, y)
             self.satellite_label.setVisible(True)
         else:
+            self.satellite_label.move(x, y)
             self.satellite_label.setVisible(False)
-
-
-        '''
-        glColor4f(1.0, 0, 0, 1.0) # Red color for the satellite
-        glPushMatrix()
-        glTranslatef(*position)
-        quadric = gluNewQuadric()
-        gluQuadricTexture(quadric, GL_FALSE)
-        gluSphere(quadric, 0.1, self.earth_triangles, self.earth_triangles)
-        glPopMatrix()
-        '''
 
         if self.controller.isDebug:
             glPushMatrix()
@@ -499,7 +535,6 @@ class Globe3DView(QOpenGLWidget):
             glPopMatrix()
 
         # reset color
-        glColor4f(1.0, 1.0, 1.0, 1.0)
 
     def get2DScreenCoordsFrom3D(self, x, y, z):
         """ Convert 3D coordinates to 2D screen coordinates."""
@@ -552,6 +587,28 @@ class Globe3DView(QOpenGLWidget):
         direction = np.array(target_position) - np.array(camera_position)
         normalized_direction = direction / np.linalg.norm(direction)
         return camera_position, normalized_direction
+
+    def drawSun(self):
+        glPushMatrix()  # Save the current matrix state
+
+        ra = self.Earth.sun_ra
+        dec = self.Earth.sun_dec
+        distance = self.Earth.sun_distance
+        sun_radius = 696340 * self.controller.scale # Radius of the Sun in km
+
+        glTranslate(distance, 0, 0)
+        glColor3f(1.0, 1.0, 0.0)  # Color the Sun yellow
+        quadric = gluNewQuadric()
+        gluSphere(quadric, sun_radius, 16, 16)  # Draw the Sun as a sphere
+
+        glLightfv(GL_LIGHT0, GL_POSITION, [distance, 0, 0, 1])  # Set the position of the Sun light source
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, [1.0, 1.0, 0.9, 1]) # Set the diffuse color of the Sun light source
+        glLightfv(GL_LIGHT0, GL_SPECULAR, [1, 1, 1, 1])  # specular: white
+        glLightfv(GL_LIGHT0, GL_AMBIENT, [0.2, 0.2, 0.2, 1])  # ambient: gray
+
+
+
+        glPopMatrix()  # Restore the previous matrix state
 
     def drawClouds(self):
         # draw clouds
@@ -682,13 +739,9 @@ class Globe3DView(QOpenGLWidget):
         return texture
 
     def drawEarth(self):
-        #self.drawSphereManual()
-
-        glColor4f(1.0, 1.0, 1.0, 1.0) # Set base color to white
-        glEnable(GL_TEXTURE_2D)
+        glColor4f(1.0, 1.0, 1.0, 1.0) # Set color to white
         glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D, self.earth_daymap)
-
+        glBindTexture(GL_TEXTURE_2D, self.earth_daymap) # Bind active texture to Earth texture
 
         glMatrixMode(GL_TEXTURE)
         glLoadIdentity()
@@ -700,16 +753,10 @@ class Globe3DView(QOpenGLWidget):
         gluQuadricTexture(quadric, GL_TRUE)
         gluSphere(quadric, self.controller.Earth.radius.km, self.earth_triangles, self.earth_triangles)
         gluDeleteQuadric(quadric)
-        glColor4f(1.0, 1.0, 1.0, 1.0) # Reset color
-
-        # Reset the texture matrix to avoid affecting other textures
-        glMatrixMode(GL_TEXTURE)
-        glLoadIdentity()
-        glMatrixMode(GL_MODELVIEW)
 
     def drawPoles(self):
         glLineWidth(10)
-
+        glDisable(GL_LIGHTING)
         # Draw South Pole
         glPushMatrix()
         glTranslatef(0, 0, -self.controller.Earth.radius.km)
@@ -731,44 +778,14 @@ class Globe3DView(QOpenGLWidget):
         glPopMatrix()
 
         glColor4f(1.0, 1.0, 1.0, 1.0) # Reset color
-
-    def drawEquator(self):
-        glLineWidth(5)
-        glColor4f(1.0, 1.0, 1.0, 1.0)
-        # Draw Equator as a loop around the Earth
-        glBegin(GL_LINE_LOOP)
-        for i in range(0, 360):
-            x = (self.controller.Earth.radius.km + 1) * cos(radians(i))
-            y = (self.controller.Earth.radius.km + 1) * sin(radians(i))
-            glVertex3f(x, y, 0)
-        glEnd()
-        glColor4f(1.0, 1.0, 1.0, 1.0)
-
-    def drawPrimeMeridian(self):
-        glLineWidth(5)
-        glColor4f(1.0, 0.0, 0.0, 1.0)
-        # drawPrimeMeridian as a loop around the Earth
-        glBegin(GL_LINE_LOOP)
-        for i in range(0, 360):
-            x = (self.controller.Earth.radius.km + 1) * cos(radians(i))
-            z = (self.controller.Earth.radius.km + 1) * sin(radians(i))
-            glVertex3f(x, 0, z)
-        glEnd()
-        glColor4f(1.0, 1.0, 1.0, 1.0)
+        glEnable(GL_LIGHTING)
 
     def drawMeridians(self):
         longitudes = self.Earth.meridians
         for longitude in longitudes:
             glPushMatrix()
-            if longitude == 0: # color the prime meridian red
-                glLineWidth(3)
-                glColor4f(1.0, 0.0, 0.0, 1.0)
-            elif longitude == 90: # color the 90 degree meridian green
-                glLineWidth(3)
-                glColor4f(0.0, 1.0, 0.0, 1.0)
-            else: # color all other meridians white
-                glLineWidth(2)
-                glColor4f(1.0, 1.0, 1.0, 0.5)
+            glLineWidth(2)
+            glColor4f(1.0, 1.0, 1.0, 0.5)
             glRotatef(longitude, 0, 0, 1)
             glBegin(GL_LINE_LOOP)
             for i in range(0, 360):
@@ -802,7 +819,7 @@ class Globe3DView(QOpenGLWidget):
         axisLength = self.controller.Earth.radius.km * 1.5  # Make axes slightly longer than the radius
         lineWidth = 5
 
-        glEnable(GL_LIGHTING)
+        glDisable(GL_LIGHTING)
 
         # X-Axis (Red)
         glPushMatrix()
@@ -834,6 +851,7 @@ class Globe3DView(QOpenGLWidget):
         glEnd()
         glPopMatrix()
 
+        glEnable(GL_LIGHTING)
         glColor4f(1.0, 1.0, 1.0, 1.0) # Reset color
 
     def drawSphereManual(self):
@@ -887,6 +905,7 @@ class Globe3DView(QOpenGLWidget):
 
     def drawSkybox(self):
         """ Draw a skybox around the scene """
+        glPushMatrix()
         glDisable(GL_LIGHTING) # Disable lighting for the skybox
         glDepthMask(GL_FALSE) # Disable writing to the depth buffer for the skybox, so it is always drawn behind other objects
 
@@ -894,16 +913,18 @@ class Globe3DView(QOpenGLWidget):
         glBindTexture(GL_TEXTURE_2D, self.stars_milky_way) # Bind active texture to stars texture
 
         # Draw the skybox as a sphere
-        glPushMatrix()
         glTranslatef(0, 0, 0)
         glScalef(-1, 1, 1)
         quadric = gluNewQuadric()
         gluQuadricTexture(quadric, GL_TRUE)
-        gluSphere(quadric, self.Earth.radius.km * 100, 32, 32)
-        glPopMatrix()
+        gluSphere(quadric, Distance.au(2.25).km * self.controller.scale, self.earth_triangles, self.earth_triangles)
 
         glDepthMask(GL_TRUE) # Re-enable writing to the depth buffer
-        glEnable(GL_LIGHTING) # Re-enable lighting
+        glEnable(GL_LIGHTING) # Re-enable lighting`
+        glActiveTexture(GL_TEXTURE0)
+
+
+        glPopMatrix()
 
     def resizeGL(self, width, height):
         """ Resize the OpenGL viewport, update the projection matrix, and set the POV Perspective """

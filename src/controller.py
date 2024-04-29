@@ -6,6 +6,7 @@ The controller is the first thing run by main.py and is responsible for setting 
 import keyboard
 import matplotlib.pyplot as plt
 import numpy as np
+from dateutil import tz
 from mpl_toolkits.basemap import Basemap
 from skyfield.api import Timescale, load
 
@@ -21,6 +22,7 @@ class ApplicationController(ControllerProtocol):
         self.current_satellite = None # current satellite being tracked
         self.Timescale = load.timescale() # a timescale is an abstraction representing a linear timeline independent from any constraints from human-made time standards
         self.isDebug = False
+        self.local_time = self.Timescale.now().astimezone(tz.tzlocal()).strftime('%Y-%m-%d %H:%M:%S %Z')
 
         # models
         self.Earth = Earth(self, self.scale)
@@ -35,6 +37,7 @@ class ApplicationController(ControllerProtocol):
         # set the current satellite to the ISS for debugging
         self.setCurrentSatellite(self.TLEManager.getSatellite('25544'))
         self.MainView.current_sat_id_spinbox.setValue(25544)
+        self.track_Satellite()
 
         self.MainView.current_sat_id_spinbox.editingFinished.connect(self.track_Satellite)
         self.refresh_sat_combobox()
@@ -82,6 +85,7 @@ class ApplicationController(ControllerProtocol):
             return
         else:
             self.setCurrentSatellite(sat)
+            self.Globe3DView.calcSatelliteOrbit(sat, epoch=self.Timescale.now(), hours_behind=1.5, hours_ahead=1.5, increment=1)
             self.Globe3DView.setScene(self.Globe3DView.SceneView.EXPLORE_VIEW)
         self.refresh_sat_combobox()
 

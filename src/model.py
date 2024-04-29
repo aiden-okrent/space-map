@@ -409,6 +409,11 @@ class Earth(Geoid):
         self.meridians = np.arange(0., 420., 60.) # draw meridians every 60 degree interval
 
         self.center = np.array([0, 0, 0]) # center of the Earth
+        self.axial_tilt = 23.439281 # Earth axial tilt in degrees
+
+        # Earth rotation as Local Apparent Sidereal Time (LAST) using GeographicPosition.lst_hours_at()
+        # the geographic position is the center of the Earth as a GeographicPosition object
+        self.NullIsland = self.latlon(0, 0)
 
         self.textures_8k = {
             "earth_daymap": os.path.join(map_textures, "blue_marble_NASA_land_ocean_ice_8192.png"),
@@ -427,6 +432,19 @@ class Earth(Geoid):
             "earth_clouds": os.path.join(map_textures, "2k_earth_clouds.jpg"),
             "stars_milky_way": os.path.join(map_textures, "2k_stars_milky_way.jpg")
         }
+
+        self.de421 = load('de421.bsp') # load the DE421 ephemeris for planetary positions
+        self.sun_eph = self.de421['sun']
+        self.earth_eph = self.de421['earth']
+
+        astronomic = self.earth_eph.at(self.controller.Timescale.now()).observe(self.sun_eph)
+        ra, dec, distance = astronomic.radec()
+        self.sun_ra = ra
+        self.sun_dec = dec
+        self.sun_distance = distance.km * self.scale
+
+
+        '''
         #
         # native Skyfield Geoid object
         # Geoid.subpoint is deprecated
@@ -456,7 +474,7 @@ class Earth(Geoid):
         # ITRSPosition.at(t) = Return the position of this ITRS location at the given time t
 
         # an example from the docs of how to use an earth satellite object
-        '''
+
         bluffton = wgs84.latlon(+40.8939, -83.8917)
         t0 = ts.utc(2014, 1, 23)
         t1 = ts.utc(2014, 1, 24)
@@ -490,9 +508,6 @@ class Earth(Geoid):
         # however, this all assumes the surface is at sea-level elevation 0, so to accoutn for this you need to manually build a subpoint by providing the elevation of the ground into the wgs84.latlon().
         # not shown
 
-        '''
-
-        '''
         geocentric = satellite.at(ts.now())
 
         # geocentric coordinates are defined as either Cartesian ICRS or Spherical ICRS.
@@ -503,7 +518,7 @@ class Earth(Geoid):
         # Spherican coordinates are measured in (right ascension, declination, distance), which are Angle, Angle, and Distance objects respectively.
 
 
-        '''
+
         #ts = load.timescale()
         #geocentric_GeographicPosition = EarthSatellite.at(ts.now()) # because this EarthSatellite's center is 399, .at() returns a Geocentric GeographicPosition object
         #cartesian_ICRS_coordinates = geocentric_GeographicPosition.xyz # .xyz is a Distance object and fully supports .km
@@ -511,7 +526,7 @@ class Earth(Geoid):
 
         #spherical_ICRS_coordinates_procession_corrected = geocentric_GeographicPosition.radac(epoch='date') # returns (right ascension, declination, distance) in Angle, Angle, and Distance objects respectively, but corrected for the procession of the Earth's axis
 
-        '''
+
         ITRS Coordinates:
         xy-plane: Earth's equator
         x-axis: 0° longitude (Prime Meridian)
@@ -539,6 +554,16 @@ class Earth(Geoid):
         [0 0 0]]
         '''
 
+    def calculateRotation(self, time: Time):
+        """Calculate the rotation of the earth at a given time. This is a 3x3 rotation matrix that defines the relationship between the Earth's ICRS frame and the Ecliptic frame."""
+        return time.gmst * 15 # GMST is in hours, convert to degrees
+
+    def isSunlit(self, satellite: Satellite, time: Time):
+        """Check if a satellite is in sunlight at a given time."""
+        # an ephemeris is required to compute the Sun's position
+        eph = load('de421.bsp')
+        return satellite.at(time).is_sunlit(eph)
+
     def get2DCartesianCoordinates(self, satellite: Satellite, time: Time):
         """
         Calculate the 2D geographical coordinates (latitude and longitude) of the satellite at a given time.
@@ -559,30 +584,20 @@ class Earth(Geoid):
 
         return (latitude, longitude, altitude)
 
-    def get3DCartesianCoordinates(self, satellite: Satellite, time: Time):
-        """
-        Calculate the 3D Cartesian coordinates (x, y, z) of the satellite at a given time relative to the Earth's center using the .xyz attribute. Reference frame is GCRC.
+    def getECICoordinates(self, satellite: Satellite, time: Time):
+        """ Calculate the Earth-Centered Inertial (ECI) coordinates of the satellite at a given time. """
 
-        Args:
-            satellite (Satellite): The Satellite object from which to calculate the coordinates.
-            time (Time): The time at which to calculate the satellite's position.
-
-        Returns:
-            tuple: A tuple containing the x, y, z coordinates in kilometers.
-        """
-
-        latitude, longitude, altitude = self.get2DCartesianCoordinates(satellite, time)
-        x, y, z = self.geographic_to_cartesian(latitude.radians, longitude.radians, altitude)
+        geocentric = satellite.at(time)
+        xyz = geocentric.xyz.km * self.scale
+        x = xyz[0]
+        y = xyz[1]
+        z = xyz[2]
 
         return np.array([x, y, z])
 
-    def geographic_to_cartesian(self, latitude, longitude, altitude):
-
-        x = (altitude + self.radius.km) * cos(latitude) * cos(longitude)
-        y = (altitude + self.radius.km) * cos(latitude) * sin(longitude)
-        z = (altitude + self.radius.km) * sin(latitude)
-
-        return x, y, z
+    def ECEFtoECI(self, ecef_pos: np.array, time: Time):
+        rot = self.calculateRotation(time)
+        return np.dot(rot, ecef_pos)
 
 class TLEManager:
     """Manages TLE orbital data; Reading from .TLE files, validating Epoch, requesting new data from Celestrak, and building Satellite objects.
