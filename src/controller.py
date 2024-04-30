@@ -16,12 +16,14 @@ from view import Globe3DView, MainView
 
 
 class ApplicationController(ControllerProtocol):
-    def __init__(self):
+    def __init__(self, app):
         # app variables
+        self.app = app
         self.scale = 1/1000 # scale of the earth model
         self.current_satellite = None # current satellite being tracked
         self.Timescale = load.timescale() # a timescale is an abstraction representing a linear timeline independent from any constraints from human-made time standards
         self.isDebug = False
+
         self.local_time = self.Timescale.now().astimezone(tz.tzlocal()).strftime('%Y-%m-%d %H:%M:%S %Z')
 
         # models
@@ -45,6 +47,12 @@ class ApplicationController(ControllerProtocol):
         self.refresh_quality_combobox()
         self.MainView.quality_combobox.activated.connect(self.quality_combobox_activated)
 
+        self.MainView.increment_spinbox.editingFinished.connect(self.update_orbit_parameters)
+        self.MainView.hours_behind_spinbox.editingFinished.connect(self.update_orbit_parameters)
+        self.MainView.hours_ahead_spinbox.editingFinished.connect(self.update_orbit_parameters)
+
+        self.update_orbit_parameters()
+
         self.MainView.setCentralWidget(self.Globe3DView)
 
         # bind whenever the key F3 is pressed to fire .toggleVisibility()
@@ -52,24 +60,89 @@ class ApplicationController(ControllerProtocol):
         keyboard.on_press_key("F2", self.toggle_scene)
         keyboard.on_press_key("F1", self.toggle_camera_mode)
 
+
+
+
+
+
     def run(self):
         self.MainView.restoreSettings()
         self.Globe3DView.run()
 
+    def sat_categories(self):
+        categories = {
+            'Favorites': [
+            '25544',  # ISS (ZARYA)
+            '59097',  # CREW DRAGON 8
+            '48274',  # CSS (TIANHE)
+            '59294',  # SOYUZ-MS 25
+            '20580',  # HST
+            '26536',  # NOAA 16
+            '35932',  # SWISSCUBE
+            '35933',  # BEESAT-1
+            '08476',  # SATCOM 1
+            ],
+            'Geostationary': [
+            '08476',  # SATCOM 1
+            '09047',  # COMSTAR 2
+            '08366',  # GOES 1 (SMS-C)
+            #'10061',  # GOES 2
+            #'10953',  # GOES 3
+            #'11964',  # GOES 4
+            #'12472',  # GOES 5
+            #'14050',  # GOES 6
+            #'17561',  # GOES 7
+            #'23051',  # GOES 8
+            #'23581',  # GOES 9
+            #'24786',  # GOES 10
+            #'26352',  # GOES 11
+            #'26871',  # GOES 12
+            #'29155',  # EWS-G1 (GOES 13)
+            #'35491',  # GOES 14
+            #'36411',  # EWS-G2 (GOES 15)
+            '41866',  # GOES 16
+            '43226',  # GOES 17
+            '51850',  # GOES 18
+            ],
+            'Polar': [
+            '23802',  # POLAR
+            '21087',  # INFORMATOR 1 & RS-14
+            ],
+            'Oddities': [
+            '26609',  # PHASE 3D (AO-40)
+            '25543',  # ARIANE 44LP DEB
+            '44002',  # ATLAS 5 CENTAUR DEB
+            ],
+            'Amateur Radio': [
+            '20480',  # JAS-1B (FO-20)
+            '28650',  # HAMSAT (VO-52)
+            '25546',  # BONUM-1
+            '25636',  # SUNSAT (SO-35)
+            '28375',  # ECHO (AO-51)
+            '35932',  # SWISSCUBE
+            '35933',  # BEESAT-1
+            '35934',  # UWE-2
+            ]
+        }
+        return categories
+
     def refresh_sat_combobox(self):
         self.MainView.satellite_combobox.clear()
-        satellites = self.get_satellite_dict()
-        # first, find the iss and put it at the top. use 25544 as id
-        self.MainView.satellite_combobox.addItem('---------')
-        self.MainView.satellite_combobox.addItem('ISS (ZARYA)')
-        self.MainView.satellite_combobox.addItem('GOES 16')
-        for sat_name in satellites:
-            if sat_name == 'ISS (ZARYA)' or sat_name == 'GOES 16':
-                continue
-            self.MainView.satellite_combobox.addItem(sat_name)
+        satellites_by_name = self.TLEManager.tle_name_dict()
+        satellites_by_id = {v: k for k, v in satellites_by_name.items()}
+        categories = self.sat_categories()
+        for category, satellites in categories.items():
+            category = category.capitalize()
+            self.MainView.satellite_combobox.addItem(f'-------- {category} --------')
+            for sat_id in satellites:
+                if sat_id in satellites_by_id:
+                    sat_name = satellites_by_id[sat_id]
+                    self.MainView.satellite_combobox.addItem(sat_name)
+        self.MainView.satellite_combobox.addItem('--- Other ---') # the rest of the satellites
+        for sat_name in satellites_by_name:
+            if self.MainView.satellite_combobox.findText(sat_name) == -1: # only add if not already in the list
+                self.MainView.satellite_combobox.addItem(sat_name)
 
-        if self.current_satellite is None:
-            return
         self.MainView.satellite_combobox.setCurrentIndex(self.MainView.satellite_combobox.findText(self.current_satellite.name))
 
     def refresh_quality_combobox(self):
@@ -85,7 +158,7 @@ class ApplicationController(ControllerProtocol):
             return
         else:
             self.setCurrentSatellite(sat)
-            self.Globe3DView.calcSatelliteOrbit(sat, epoch=self.Timescale.now(), hours_behind=1.5, hours_ahead=1.5, increment=1)
+            self.update_orbit_parameters()
             self.Globe3DView.setScene(self.Globe3DView.SceneView.EXPLORE_VIEW)
         self.refresh_sat_combobox()
 
@@ -129,6 +202,7 @@ class ApplicationController(ControllerProtocol):
     def setCurrentSatellite(self, satellite: Satellite):
         self.current_satellite = satellite
 
+
     def get_current_satellite_translation(self):
         if self.current_satellite is None:
             return None
@@ -164,3 +238,24 @@ class ApplicationController(ControllerProtocol):
 
         self.Globe3DView.camera.setCameraMode(mode)
         return
+
+    def update_orbit_parameters(self):
+
+        epoch = self.Timescale.now()
+        hours_behind = self.MainView.hours_behind_spinbox.value()
+        hours_ahead = self.MainView.hours_ahead_spinbox.value()
+        increment = self.MainView.increment_spinbox.value()
+
+        #self.MainView.increment_spinbox.setValue(increment)
+        #self.MainView.hours_behind_spinbox.setValue(hours_behind)
+        #self.MainView.hours_ahead_spinbox.setValue(hours_ahead)
+        #self.MainView.setFocus()
+        #times = self.Timescale.tt_jd(epoch.tt + np.linspace(-hours_behind * 60, hours_ahead * 60, num=100) / 1440)
+        #coords = self.Earth.getECICoordinates(self.current_satellite, times)
+
+        #print("manual", len(times), len(coords.T))
+
+        coords = self.Earth.calcSatelliteOrbitVertices(self.current_satellite, epoch)
+        #print("auto", len(times), len(coords))
+
+        self.Globe3DView.orbit_vertices = coords

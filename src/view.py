@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import timedelta
 from math import cos, e, pi, radians, sin, sqrt
 from typing import TYPE_CHECKING
@@ -44,6 +45,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDockWidget,
     QDoubleSpinBox,
+    QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -65,6 +67,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from skyfield.timelib import Time
 from skyfield.toposlib import GeographicPosition
 from skyfield.units import Angle, Distance, Velocity
 
@@ -189,6 +192,86 @@ class MainView(AbstractWindow):
         self.quality_combobox = QComboBox()
         self.quality_combobox.setStyle(MyProxyStyle())
 
+        self.ctrl_dock_widget = QDockWidget("Parameters", self)
+        self.ctrl_widget = QWidget()
+        self.ctrl_layout = QVBoxLayout()
+        self.ctrl_widget.setLayout(self.ctrl_layout)
+
+        self.ctrl_dock_widget.setWidget(self.ctrl_widget)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.ctrl_dock_widget)
+
+        orbitpath_grp = QGroupBox("Orbit Path")
+        orbitpath_grp_layout = QFormLayout()
+        orbitpath_grp.setLayout(orbitpath_grp_layout)
+
+
+        self.hours_behind_spinbox = QDoubleSpinBox()
+        self.hours_behind_spinbox.setRange(0, 7*24)
+        self.hours_behind_spinbox.setSingleStep(0.5)
+        self.hours_behind_spinbox.setDecimals(1)
+        self.hours_behind_spinbox.setValue(0.5)
+        self.hours_behind_spinbox.setPrefix("")
+        self.hours_behind_spinbox.setSuffix(" hrs")
+        self.hours_behind_spinbox.valueChanged.connect(lambda: self.hours_behind_spinbox.setSuffix(" hr ") if self.hours_behind_spinbox.value() == 1 else self.hours_behind_spinbox.setSuffix(" hrs"))
+        self.hours_behind_spinbox.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.hours_behind_spinbox.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.hours_behind_spinbox.setContentsMargins(0, 0, 0, 0)
+
+        self.hours_ahead_spinbox = QDoubleSpinBox()
+        self.hours_ahead_spinbox.setRange(0, 7*24)
+        self.hours_ahead_spinbox.setSingleStep(0.5)
+        self.hours_ahead_spinbox.setDecimals(1)
+        self.hours_ahead_spinbox.setValue(0.5)
+        self.hours_ahead_spinbox.setPrefix("")
+        self.hours_ahead_spinbox.setSuffix(" hrs")
+        self.hours_ahead_spinbox.valueChanged.connect(lambda: self.hours_ahead_spinbox.setSuffix(" hr ") if self.hours_ahead_spinbox.value() == 1 else self.hours_ahead_spinbox.setSuffix(" hrs"))
+        self.hours_ahead_spinbox.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.hours_ahead_spinbox.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.hours_ahead_spinbox.setContentsMargins(0, 0, 0, 0)
+
+        self.increment_spinbox = QDoubleSpinBox()
+        self.increment_spinbox.setRange(1, 60)
+        self.increment_spinbox.setSingleStep(5)
+        self.increment_spinbox.setDecimals(0)
+        self.increment_spinbox.setValue(2)
+        self.increment_spinbox.setPrefix("")
+        self.increment_spinbox.setSuffix(" mins")
+        self.increment_spinbox.valueChanged.connect(lambda: self.increment_spinbox.setSingleStep(4) if self.increment_spinbox.value() == 1 else self.increment_spinbox.setSingleStep(5))
+        self.increment_spinbox.valueChanged.connect(lambda: self.increment_spinbox.setSuffix(" min ") if self.increment_spinbox.value() == 1 else self.increment_spinbox.setSuffix(" mins"))
+        self.increment_spinbox.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        self.increment_spinbox.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.increment_spinbox.setContentsMargins(0, 0, 0, 0)
+
+
+
+        hrs_behind_row = QHBoxLayout()
+        hrs_behind_row.setSpacing(0)
+        hrs_behind_prefix = QLabel("-")
+        hrs_behind_row.addWidget(hrs_behind_prefix)
+        hrs_behind_row.addWidget(self.hours_behind_spinbox)
+
+        hrs_ahead_row = QHBoxLayout()
+        hrs_ahead_row.setSpacing(0)
+        hrs_ahead_prefix = QLabel("+")
+        hrs_ahead_row.addWidget(hrs_ahead_prefix)
+        hrs_ahead_row.addWidget(self.hours_ahead_spinbox)
+
+        orbitpath_grp_layout.addRow("Past", hrs_behind_row)
+        orbitpath_grp_layout.addRow("Future", hrs_ahead_row)
+        orbitpath_grp_layout.addRow("Resolution", self.increment_spinbox)
+        self.ctrl_layout.addWidget(orbitpath_grp)
+        self.ctrl_layout.addStretch(1)
+
+
+
+        self.mousePressEvent = lambda event: self.increment_spinbox.clearFocus() if self.increment_spinbox.hasFocus() else None
+        self.mousePressEvent = lambda event: self.hours_ahead_spinbox.clearFocus() if self.hours_ahead_spinbox.hasFocus() else None
+        self.mousePressEvent = lambda event: self.hours_behind_spinbox.clearFocus() if self.hours_behind_spinbox.hasFocus() else None
+
+        self.increment_spinbox.editingFinished.connect(self.increment_spinbox.clearFocus)
+        self.hours_ahead_spinbox.editingFinished.connect(self.hours_ahead_spinbox.clearFocus)
+        self.hours_behind_spinbox.editingFinished.connect(self.hours_behind_spinbox.clearFocus)
+
         # Add actions to the topBar
         self.topBar.addWidget(self.current_sat_input)
         self.topBar.addWidget(self.quality_combobox)
@@ -310,7 +393,7 @@ class Globe3DView(QOpenGLWidget):
         self.cameraPosXYZ = [0, 0, 20]
         self.cameraTarget = {"name": "", "position": [0, 0, 0]}
 
-        self.orbit_vertices = []
+        self.orbit_vertices = {}
 
         self.orbitDistance = self.Earth.radius.km + 10
 
@@ -318,7 +401,12 @@ class Globe3DView(QOpenGLWidget):
         self.satellite_label.setFixedSize(20, 20)
         color = QColor(255, 0, 0)
         self.satellite_label.setPixmap(self.recolorSVG("src/assets/icons/gis--satellite.svg", Qt.GlobalColor.white))
-        self.controller.MainView.setWindowIcon(self.recolorSVG("src/assets/icons/gis--network.svg", Qt.GlobalColor.white))
+
+        app_icon = self.recolorSVG("src/assets/icons/gis--network.svg", Qt.GlobalColor.white)
+        #self.controller.app.setWindowIcon(QPixmap(app_icon.scaled(512, 512)))
+
+        # set the app icon used in the windows taskbar
+
 
         self.mousePressEvent = self.mousePressEvent
         self.mouseMoveEvent = self.mouseMoveEvent
@@ -414,6 +502,8 @@ class Globe3DView(QOpenGLWidget):
 
         if self.controller.isDebug:
             self.drawXYZAxis()
+        time = self.controller.Timescale.now()
+
 
         glRotatef(-90, 1, 0, 0) # Align Earth's North Pole with the z-axis
         self.drawSkybox()
@@ -425,16 +515,26 @@ class Globe3DView(QOpenGLWidget):
         glMatrixMode(GL_MODELVIEW)
         self.drawSun()
         #glRotatef(-90, 0, 0, 1) # Align Earth's Prime Meridian with the x-axis
-
         glRotatef(self.Earth.axial_tilt, 0, 1, 0) # Rotate the Earth's axial tilt
-        self.drawSatellite(satellite, epoch=self.controller.Timescale.now(), color=QColor(255, 255, 255))
-        glColor4f(1.0, 0, 0, 0.3) # Red color for the satellite's orbit
-        self.drawSatelliteOrbit(satellite, self.orbit_vertices)
+        self.drawSatellite(satellite, now=time, color=QColor(255, 255, 255))
 
+        # accurate orbit path
+        glColor4f(1.0, 0.0, 0.0, 1.0) # Red color for orbit path
+        glLineWidth(1)
+        glDisable(GL_LIGHTING)
+        glBegin(GL_LINE_STRIP)
+        for timestamp, position in self.orbit_vertices.items():
+            glVertex3f(*position)
+        glEnd()
+        glEnable(GL_LIGHTING)
+
+        # elliptical orbit path
+        glColor4f(1.0, 0.0, 1.0, 1.0)
+        glLineWidth(1)
+        self.drawSatelliteOrbit(satellite, now=time, orbit_vertices=self.orbit_vertices)
 
         rotation = self.Earth.calculateRotation(self.controller.Timescale.now())
         glRotatef(rotation, 0, 0, 1) # Rotate the Earth around the z-axis to simulate the Earth's rotation
-
         self.drawEarth()
 
         if self.controller.isDebug:
@@ -446,40 +546,20 @@ class Globe3DView(QOpenGLWidget):
         elif self.quality == self.RenderQuality.HIGH:
             self.drawPoles()
 
-    def drawSatelliteOrbit(self, satellite, vertices):
+    def drawSatelliteOrbit(self, satellite, now: Time, orbit_vertices):
         glDisable(GL_LIGHTING)
-        glLineWidth(2)
-
+        glPushMatrix()
+        positions = satellite.getOrbit() # an array of positions for the satellite's orbit
 
         glBegin(GL_LINE_STRIP)
-        for vertex in vertices:
-            glVertex3f(*vertex)
+        for position in positions:
+            glVertex3f(*position)
         glEnd()
 
-
+        glPopMatrix()
         glEnable(GL_LIGHTING)
-        glColor4f(1.0, 1.0, 1.0, 1.0) # Reset color
 
-
-
-    def calcSatelliteOrbit(self, satellite, epoch, hours_behind=0, hours_ahead=2, increment=10):
-        """ Calculate the satellite's orbit as an elliptical path around the Earth by calculating the satellite's position in the next 4 hours every 15 mins and connecting the dots. """
-
-        self.orbit_vertices = []  # List to store the vertices of the orbit
-
-        times = np.arange(-hours_behind * 60, hours_ahead * 60, increment)
-
-        for minute in times:
-            time = epoch + timedelta(minutes=int(minute))
-            position = self.Earth.getECICoordinates(satellite, time)
-
-            self.orbit_vertices.append(position)  # Add the position to the orbit vertices list
-
-        return self.orbit_vertices
-
-
-
-    def drawSatellite(self, satellite, epoch, color):
+    def drawSatellite(self, satellite, now, color):
         """ Draw the satellite at the given position. """
 
         glEnable(GL_LIGHTING)
@@ -490,11 +570,14 @@ class Globe3DView(QOpenGLWidget):
         modelview = glGetDoublev(GL_MODELVIEW_MATRIX)
         projection = glGetDoublev(GL_PROJECTION_MATRIX)
 
-        position = self.Earth.getECICoordinates(satellite, epoch)
+        # getECICoordinates returns a numpy array of sat positions if a list of times is passed, but a single position if a single time is passed
+        position = self.Earth.getECICoordinates(satellite, now)
 
         screen_coords = self.get2DScreenCoordsFrom3D(*position)
         x = screen_coords[0]
         y = self.height() - screen_coords[1]
+
+
 
         # offset the label to be centered on the satellite's position
         x -= self.satellite_label.width() / 2
@@ -522,8 +605,16 @@ class Globe3DView(QOpenGLWidget):
             glTranslatef(*surface_position)
             glColor4f(1.0, 1.0, 1.0, 1.0)
             quadric = gluNewQuadric()
-            gluSphere(quadric, 0.05, self.earth_triangles, self.earth_triangles)
+            gluSphere(quadric, 0.01, self.earth_triangles, self.earth_triangles)
             glPopMatrix()
+
+            glPushMatrix()
+            glTranslatef(*position)
+            glColor4f(1.0, 1.0, 1.0, 1.0)
+            quadric = gluNewQuadric()
+            gluSphere(quadric, 0.01, self.earth_triangles, self.earth_triangles)
+            glPopMatrix()
+
 
             glLineWidth(2)
             glPushMatrix() #draw a straight line that points through the center of the earth
@@ -544,6 +635,10 @@ class Globe3DView(QOpenGLWidget):
 
         screen_coords = gluProject(x, y, z, modelview, projection, viewport)
         screen_coords = [int(coord) for coord in screen_coords]
+
+        # Adjust for the height and width of the OpenGL widget
+        screen_coords[0] *= self.width() / viewport[2]
+        screen_coords[1] *= self.height() / viewport[3]
 
         return screen_coords
 
@@ -691,7 +786,8 @@ class Globe3DView(QOpenGLWidget):
             print("DEBUG MODE")
             glShadeModel(GL_FLAT)
             self.earth_triangles = 16
-            self.lighting_enabled = False
+            self.controller.MainView.increment_spinbox.setValue(5)
+            self.controller.update_orbit_parameters()
             self.earth_daymap = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["earth_daymap"])
             self.stars_milky_way = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["stars_milky_way"])
             self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["earth_clouds"])
@@ -700,7 +796,8 @@ class Globe3DView(QOpenGLWidget):
         elif quality == self.RenderQuality.LOW:
             glShadeModel(GL_FLAT)
             self.earth_triangles = 16
-            self.lighting_enabled = False
+            self.controller.MainView.increment_spinbox.setValue(2)
+            self.controller.update_orbit_parameters()
             self.earth_daymap = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_2k["earth_daymap"])
             self.stars_milky_way = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_2k["stars_milky_way"])
             self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_2k["earth_clouds"])
@@ -708,7 +805,8 @@ class Globe3DView(QOpenGLWidget):
         elif quality == self.RenderQuality.HIGH:
             glShadeModel(GL_SMOOTH)
             self.earth_triangles = 128
-            self.lighting_enabled = True
+            self.controller.MainView.increment_spinbox.setValue(1)
+            self.controller.update_orbit_parameters()
             self.earth_daymap = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["earth_daymap"])
             self.stars_milky_way = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["stars_milky_way"])
             self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["earth_clouds"])
