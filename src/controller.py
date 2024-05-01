@@ -21,6 +21,8 @@ class ApplicationController(ControllerProtocol):
         self.app = app
         self.scale = 1/1000 # scale of the earth model
         self.current_satellite = None # current satellite being tracked
+        self.orbit_data = None # orbit data for the current satellite
+        self.ground_path = None # ground path for the current satellite
         self.Timescale = load.timescale() # a timescale is an abstraction representing a linear timeline independent from any constraints from human-made time standards
         self.isDebug = False
 
@@ -34,36 +36,22 @@ class ApplicationController(ControllerProtocol):
         self.MainView = MainView(self)
         self.Globe3DView = Globe3DView(self, self.Earth)
 
-        # add the GlobeOverlayView widget to the MainView as a transparent overlay on top of the Globe3DView
-
-        # set the current satellite to the ISS for debugging
-        self.setCurrentSatellite(self.TLEManager.getSatellite('25544'))
+        # set up the default satellite
         self.MainView.current_sat_id_spinbox.setValue(25544)
         self.track_Satellite()
+        #self.calcSatOrbit(self.current_satellite)
 
+        # bind the signals
         self.MainView.current_sat_id_spinbox.editingFinished.connect(self.track_Satellite)
         self.refresh_sat_combobox()
         self.MainView.satellite_combobox.activated.connect(self.sat_combobox_activated)
         self.refresh_quality_combobox()
         self.MainView.quality_combobox.activated.connect(self.quality_combobox_activated)
-
-        self.MainView.increment_spinbox.editingFinished.connect(self.update_orbit_parameters)
-        self.MainView.hours_behind_spinbox.editingFinished.connect(self.update_orbit_parameters)
-        self.MainView.hours_ahead_spinbox.editingFinished.connect(self.update_orbit_parameters)
-
-        self.update_orbit_parameters()
-
-        self.MainView.setCentralWidget(self.Globe3DView)
-
-        # bind whenever the key F3 is pressed to fire .toggleVisibility()
         keyboard.on_press_key("F3", self.toggleDebug)
         keyboard.on_press_key("F2", self.toggle_scene)
         keyboard.on_press_key("F1", self.toggle_camera_mode)
 
-
-
-
-
+        self.MainView.setCentralWidget(self.Globe3DView)
 
     def run(self):
         self.MainView.restoreSettings()
@@ -158,7 +146,6 @@ class ApplicationController(ControllerProtocol):
             return
         else:
             self.setCurrentSatellite(sat)
-            self.update_orbit_parameters()
             self.Globe3DView.setScene(self.Globe3DView.SceneView.EXPLORE_VIEW)
         self.refresh_sat_combobox()
 
@@ -201,6 +188,11 @@ class ApplicationController(ControllerProtocol):
 
     def setCurrentSatellite(self, satellite: Satellite):
         self.current_satellite = satellite
+        self.orbit_data = self.calcSatOrbit(satellite)
+        length = 1 # hours
+        res = length * 60 # minutes
+        self.ground_path = self.Earth.calcSatelliteGroundPath(satellite, self.Timescale.now(), length, res)
+
 
 
     def get_current_satellite_translation(self):
@@ -239,23 +231,5 @@ class ApplicationController(ControllerProtocol):
         self.Globe3DView.camera.setCameraMode(mode)
         return
 
-    def update_orbit_parameters(self):
-
-        epoch = self.Timescale.now()
-        hours_behind = self.MainView.hours_behind_spinbox.value()
-        hours_ahead = self.MainView.hours_ahead_spinbox.value()
-        increment = self.MainView.increment_spinbox.value()
-
-        #self.MainView.increment_spinbox.setValue(increment)
-        #self.MainView.hours_behind_spinbox.setValue(hours_behind)
-        #self.MainView.hours_ahead_spinbox.setValue(hours_ahead)
-        #self.MainView.setFocus()
-        #times = self.Timescale.tt_jd(epoch.tt + np.linspace(-hours_behind * 60, hours_ahead * 60, num=100) / 1440)
-        #coords = self.Earth.getECICoordinates(self.current_satellite, times)
-
-        #print("manual", len(times), len(coords.T))
-
-        coords = self.Earth.calcSatelliteOrbitVertices(self.current_satellite, epoch)
-        #print("auto", len(times), len(coords))
-
-        self.Globe3DView.orbit_vertices = coords
+    def calcSatOrbit(self, satellite):
+        return satellite.getOrbit()

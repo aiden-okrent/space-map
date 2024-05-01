@@ -5,6 +5,7 @@ from math import cos, e, pi, radians, sin, sqrt
 from typing import TYPE_CHECKING
 
 import numpy as np
+from bidict import inverted
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from PySide6 import QtCore
@@ -393,8 +394,6 @@ class Globe3DView(QOpenGLWidget):
         self.cameraPosXYZ = [0, 0, 20]
         self.cameraTarget = {"name": "", "position": [0, 0, 0]}
 
-        self.orbit_vertices = {}
-
         self.orbitDistance = self.Earth.radius.km + 10
 
         self.satellite_label = QLabel(self)
@@ -514,49 +513,43 @@ class Globe3DView(QOpenGLWidget):
         glBindTexture(GL_TEXTURE_2D, self.earth_daymap)
         glMatrixMode(GL_MODELVIEW)
         self.drawSun()
-        #glRotatef(-90, 0, 0, 1) # Align Earth's Prime Meridian with the x-axis
+
         glRotatef(self.Earth.axial_tilt, 0, 1, 0) # Rotate the Earth's axial tilt
         self.drawSatellite(satellite, now=time, color=QColor(255, 255, 255))
 
-        # accurate orbit path
-        glColor4f(1.0, 0.0, 0.0, 1.0) # Red color for orbit path
-        glLineWidth(1)
-        glDisable(GL_LIGHTING)
-        glBegin(GL_LINE_STRIP)
-        for timestamp, position in self.orbit_vertices.items():
-            glVertex3f(*position)
-        glEnd()
-        glEnable(GL_LIGHTING)
-
         # elliptical orbit path
-        glColor4f(1.0, 0.0, 1.0, 1.0)
         glLineWidth(1)
-        self.drawSatelliteOrbit(satellite, now=time, orbit_vertices=self.orbit_vertices)
+        glColor4f(1.0, 0.0, 0.0, 1.0)
+        self.drawSatelliteOrbit(satellite)
 
         rotation = self.Earth.calculateRotation(self.controller.Timescale.now())
         glRotatef(rotation, 0, 0, 1) # Rotate the Earth around the z-axis to simulate the Earth's rotation
+
         self.drawEarth()
 
         if self.controller.isDebug:
             self.drawParallels()
             self.drawMeridians()
-
-        if self.quality == self.RenderQuality.LOW:
-            self.drawPoles()
-        elif self.quality == self.RenderQuality.HIGH:
             self.drawPoles()
 
-    def drawSatelliteOrbit(self, satellite, now: Time, orbit_vertices):
+    def drawSatelliteOrbit(self, satellite):
         glDisable(GL_LIGHTING)
         glPushMatrix()
-        positions = satellite.getOrbit() # an array of positions for the satellite's orbit
+        glLineWidth(1)
+        glEnable(GL_LINE_SMOOTH)
 
+        positions = self.controller.orbit_data # a stored array of positions for the current satellite's orbit
         glBegin(GL_LINE_STRIP)
         for position in positions:
             glVertex3f(*position)
+        glVertex3f(*positions[0]) # Close the loop
         glEnd()
 
+
+
+
         glPopMatrix()
+        glDisable(GL_LINE_SMOOTH)
         glEnable(GL_LIGHTING)
 
     def drawSatellite(self, satellite, now, color):
@@ -577,8 +570,6 @@ class Globe3DView(QOpenGLWidget):
         x = screen_coords[0]
         y = self.height() - screen_coords[1]
 
-
-
         # offset the label to be centered on the satellite's position
         x -= self.satellite_label.width() / 2
         y -= self.satellite_label.height() / 2
@@ -598,6 +589,29 @@ class Globe3DView(QOpenGLWidget):
         else:
             self.satellite_label.move(x, y)
             self.satellite_label.setVisible(False)
+        glEnable(GL_LINE_SMOOTH)
+
+        glLineWidth(1)
+        glPushMatrix() #draw a straight line that points through the center of the earth
+        glBegin(GL_LINES)
+        glColor4f(0.5, 0.5, 0.5, 1.0)
+        glVertex3f(*position)
+        glVertex3f(0, 0, 0)
+        glEnd()
+        glPopMatrix()
+
+        '''
+        glPushMatrix()
+        glDisable(GL_LIGHTING)
+        ground_path = self.controller.ground_path
+        glBegin(GL_LINE_STRIP)
+        for position in ground_path:
+            glColor4f(1.0, 1.0, 1.0, 1.0)
+            glVertex3f(*position)
+        glEnd()
+        glPopMatrix()
+        glEnable(GL_LIGHTING)
+            '''
 
         if self.controller.isDebug:
             glPushMatrix()
@@ -605,7 +619,7 @@ class Globe3DView(QOpenGLWidget):
             glTranslatef(*surface_position)
             glColor4f(1.0, 1.0, 1.0, 1.0)
             quadric = gluNewQuadric()
-            gluSphere(quadric, 0.01, self.earth_triangles, self.earth_triangles)
+            gluSphere(quadric, .1, self.earth_triangles, self.earth_triangles)
             glPopMatrix()
 
             glPushMatrix()
@@ -613,16 +627,6 @@ class Globe3DView(QOpenGLWidget):
             glColor4f(1.0, 1.0, 1.0, 1.0)
             quadric = gluNewQuadric()
             gluSphere(quadric, 0.01, self.earth_triangles, self.earth_triangles)
-            glPopMatrix()
-
-
-            glLineWidth(2)
-            glPushMatrix() #draw a straight line that points through the center of the earth
-            glBegin(GL_LINES)
-            glColor4f(1.0, 1.0, 1.0, 1.0)
-            glVertex3f(*position)
-            glVertex3f(0,0,0)
-            glEnd()
             glPopMatrix()
 
         # reset color
@@ -787,7 +791,6 @@ class Globe3DView(QOpenGLWidget):
             glShadeModel(GL_FLAT)
             self.earth_triangles = 16
             self.controller.MainView.increment_spinbox.setValue(5)
-            self.controller.update_orbit_parameters()
             self.earth_daymap = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["earth_daymap"])
             self.stars_milky_way = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["stars_milky_way"])
             self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_debug["earth_clouds"])
@@ -797,7 +800,6 @@ class Globe3DView(QOpenGLWidget):
             glShadeModel(GL_FLAT)
             self.earth_triangles = 16
             self.controller.MainView.increment_spinbox.setValue(2)
-            self.controller.update_orbit_parameters()
             self.earth_daymap = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_2k["earth_daymap"])
             self.stars_milky_way = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_2k["stars_milky_way"])
             self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_2k["earth_clouds"])
@@ -806,7 +808,6 @@ class Globe3DView(QOpenGLWidget):
             glShadeModel(GL_SMOOTH)
             self.earth_triangles = 128
             self.controller.MainView.increment_spinbox.setValue(1)
-            self.controller.update_orbit_parameters()
             self.earth_daymap = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["earth_daymap"])
             self.stars_milky_way = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["stars_milky_way"])
             self.earth_clouds = self.unpackImageToTexture(imagePath=self.controller.Earth.textures_8k["earth_clouds"])

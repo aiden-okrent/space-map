@@ -18,10 +18,15 @@ from math import (
     sqrt,
     tan,
 )
+from turtle import position
 from typing import Union
 
+import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Ellipse
+from mpl_toolkits.mplot3d import Axes3D
 from skyfield.api import Angle, Distance, EarthSatellite, Time, load, wgs84
+from skyfield.elementslib import osculating_elements_of
 from skyfield.positionlib import Geocentric
 from skyfield.toposlib import Geoid
 
@@ -393,33 +398,23 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
             return False
         return True
 
-    '''
-    Therefore, to go directly from n in TLE to the semi-major axis a. We can use the following formula: a=μ1/32nπ864002/3.
-    '''
-
     def getOrbit(self):
         # Constants and orbital elements
-        mu = self.controller.Earth.GM # Gravitational constant
         orbits_per_minute = self.model.no_kozai / 6.283185307179586476925287 # Convert mean motion to orbits per minute
         orbits_per_day = 24 * 60 * orbits_per_minute
         n = orbits_per_day * 2 * np.pi / 86400  # Convert to radians per second
 
-        a = mu**(1/3) / (n)**(2/3)  # Semi-major axis
-        e = self.model.ecco  # Eccentricity
-        i = self.model.inclo  # Inclination
-        Omega = self.model.nodeo  # Longitude of the ascending node
-        omega = self.model.argpo  # Argument of perigee
-
-        # Parametric constants for the orbital plane
-        cos_Omega = np.cos(Omega)
-        sin_Omega = np.sin(Omega)
-        cos_omega = np.cos(omega)
-        sin_omega = np.sin(omega)
-        cos_i = np.cos(i)
-        sin_i = np.sin(i)
+        # Calculate the elements of the osculating satellite orbit
+        elements = osculating_elements_of(self.at(self.controller.Timescale.now()))
+        a = elements.semi_major_axis.km * self.controller.Earth.scale  # Semi-major axis
+        e = elements.eccentricity
+        i = elements.inclination.radians
+        Omega = elements.longitude_of_ascending_node.radians
+        omega = elements.argument_of_periapsis.radians
+        b = elements.semi_minor_axis.km * self.controller.Earth.scale  # Semi-minor axis
 
         # Define u and v
-        u = -np.array([
+        u = np.array([
             np.cos(Omega) * np.cos(omega) - np.sin(Omega) * np.sin(omega) * np.cos(i),
             np.sin(Omega) * np.cos(omega) + np.cos(Omega) * np.sin(omega) * np.cos(i),
             np.sin(omega) * np.sin(i)
@@ -431,19 +426,16 @@ class Satellite(EarthSatellite): # Inherit from EarthSatellite
             np.cos(omega) * np.sin(i)
         ])
 
-
-        cross_product = np.cross(u, v)
-        expected_angular_momentum = [0, 0, sin_i]
-        normalized_cross_product = cross_product / np.linalg.norm(cross_product)
-        expected_direction = np.array([0, 0, np.sign(sin_i)])  # This ensures the check aligns with prograde or retrograde orientations
-
         # Calculate positions
         t = np.linspace(-2 * np.pi, 2 * np.pi, 500)
         r = a * (1 - e**2) / (1 + e * np.cos(t))  # Radius vector in the orbital plane
 
         positions = np.array([r[j] * np.cos(t[j]) * u + r[j] * np.sin(t[j]) * v for j in range(len(t))])
 
-        positions = positions[:len(positions)//2]
+        # Only take half of the orbit and make the first position the same as the last to close the orbit
+        positions = positions[:len(positions) // 2]
+        positions = np.append(positions, [positions[0]], axis=0)
+
         return positions
 
 
@@ -488,6 +480,7 @@ class Earth(Geoid):
         self.de421 = load('de421.bsp') # load the DE421 ephemeris for planetary positions
         self.sun_eph = self.de421['sun']
         self.earth_eph = self.de421['earth']
+        self.eph = self.de421
 
         astronomic = self.earth_eph.at(self.controller.Timescale.now()).observe(self.sun_eph)
         ra, dec, distance = astronomic.radec()
@@ -635,7 +628,25 @@ class Earth(Geoid):
         latitude, longitude = self.latlon_of(geocentric_position)
         altitude = (geocentric_position.distance().km * self.scale) - self.radius.km
 
-        return (latitude, longitude, altitude)
+        return latitude, longitude, altitude
+
+    def getECEFCoordinates(self, satellite: Satellite, times):
+        """ Calculate the Earth-Centered Earth-Fixed (ECEF) coordinates of the satellite at the given time or times. """
+
+        xyz = []
+        if isinstance(times, Time): # convert to list if single time is provided
+            lat, lon, alt = self.get2DCartesianCoordinates(satellite, times)
+            return self.latlon(lat, lon, alt)
+
+        elif isinstance(times, list): # if a list of times is provided
+            for time in times:
+                lat, lon, alt = self.get2DCartesianCoordinates(satellite, time)
+                geocentric = self.latlon(lat.degrees, lon.degrees, alt)
+
+                xyz.append(geocentric.at(time).position.km ) # append the ECEF coordinates to the list
+            return np.array(xyz)
+
+
 
     def getECICoordinatesSingle(self, satellite: Satellite, time: Time):
         """ Calculate the Earth-Centered Inertial (ECI) coordinates of the satellite at a given time. """
@@ -660,24 +671,50 @@ class Earth(Geoid):
             for time in times: # iterate over each time in the list
                 geocentric = satellite.at(time)
                 xyz.append(geocentric.position.km * self.scale) # append the ECI coordinates to the list
-            #print(xyz)
-            return np.array(xyz) # return the list as a numpy array
+            return np.array(xyz)
 
         else:
             print("Invalid time format provided.")
             return np.array([0, 0, 0])
 
-    def ECEFtoECI(self, ecef_pos: np.array, time: Time):
-        rot = self.calculateRotation(time)
-        return np.dot(rot, ecef_pos)
+    def ECEFtoECI(self, ecef_pos: np.array, time: Time): # applies earths rotation to convert ECEF to ECI
+        """ Convert Earth-Centered Earth-Fixed (ECEF) coordinates to Earth-Centered Inertial (ECI) coordinates at a given time. """
+        rotation = self.calculateRotation(time)
+        rotation_matrix = np.array([[np.cos(rotation), -np.sin(rotation), 0],
+                                    [np.sin(rotation), np.cos(rotation), 0],
+                                    [0, 0, 1]])
+        return np.dot(rotation_matrix, ecef_pos)
+
+    def ECItoECEF(self, eci_pos: np.array, time: Time): # negatively applies earths rotation to convert ECI to ECEF
+        """ Convert Earth-Centered Inertial (ECI) coordinates to Earth-Centered Earth-Fixed (ECEF) coordinates at a given time. """
+        rotation = self.calculateRotation(time)
+        rotation_matrix = np.array([[np.cos(rotation), np.sin(rotation), 0],
+                                    [-np.sin(rotation), np.cos(rotation), 0],
+                                    [0, 0, 1]])
+        return np.dot(rotation_matrix, eci_pos)
 
     def calcSatelliteOrbitVertices(self, satellite, epoch: Time):
         """ Calculate the satellite's mean orbital path for 1 revolution as vertex positions at a resolution of 1 minute. """
         minutes = np.linspace(0, satellite.model.no_kozai * 1440, num=1000) # average positions around 1 revolution in minutes
         timestamps = [epoch + datetime.timedelta(minutes=m) for m in minutes] # create a list of timestamps for each minute
-        coords = self.getECICoordinates(satellite, timestamps)
+        coords = self.getECICoordinates(satellite, timestamps) # get the ECI coordinates for each timestamp
+        return  coords
 
-        return dict(zip(timestamps, coords))
+    def calcSatelliteGroundPath(self, satellite, epoch: Time, len: int = 60, res: int = 60):
+        """ Calculate the satellite's ground path for len hrs at a resolution of res mins. """
+        minutes = np.linspace(0, len * 60, num=res) # average positions around 1 hour in minutes
+        #minutes = np.linspace(0, (satellite.model.no_kozai * 1440), num=1000)
+        timestamps = [epoch + datetime.timedelta(minutes=m) for m in minutes]
+        coords2D = [self.get2DCartesianCoordinates(satellite, t) for t in timestamps]
+
+        # map the lat and lon on the earth's surface manually
+
+        geocentrics = np.array([self.latlon(lat.degrees, lon.degrees, 50 * self.scale * 1000) for lat, lon, alt in coords2D])
+        coords3D = np.array([geocentric.at(t).position.km for geocentric, t in zip(geocentrics, timestamps)])
+        coordsECEF = np.array([self.ECItoECEF(coord, t) for coord, t in zip(coords3D, timestamps)])
+
+        return coordsECEF
+
 
 class TLEManager:
     """Manages TLE orbital data; Reading from .TLE files, validating Epoch, requesting new data from Celestrak, and building Satellite objects.
