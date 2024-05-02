@@ -1,10 +1,9 @@
 import sys
-from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QIntValidator, QPainter, QPixmap
+from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication
 
 from controller import ApplicationController
 
@@ -26,18 +25,14 @@ def main():
     icon_path = ('src/assets/icons/gis--network.svg')
     icon = QIcon(str(icon_path))
     pixmap = QPixmap(icon.pixmap(512, 512))  # Set the desired resolution here
-
     renderer = QSvgRenderer(icon_path)
     pixmap = QPixmap(512, 512)
     pixmap.fill(Qt.GlobalColor.transparent)
-
     painter = QPainter(pixmap)
     renderer.render(painter)
     painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-
     painter.fillRect(pixmap.rect(), Qt.GlobalColor.white)
     painter.end()
-
     app.setWindowIcon(pixmap)
 
     appController = ApplicationController(app)
