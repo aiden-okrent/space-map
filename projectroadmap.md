@@ -1,7 +1,9 @@
 # Space-map Project Roadmap
 
-## Tasks
+## To-Do
 - [x] 1: Render Static Earth Globe in 3D w/ OpenGL
-- [ ] 2: Follow a Single Satellite along its Orbit in a Tracking View
-- [ ] 3: Multi-satellite View for Constellations such as Iridum and categories like Geostationary
-- [ ] 4: Infopanel for Satellites of Interest
+- [x] 2: Get icon for sat working
+- [X] 3: Accurate simulation/model of satellites over the Earth in ECI Refrence Frame
+- [X] 4: Draw parametric ellipsis to show the average orbit of a satellite
+- [ ] 5: Refactor current progress into more sustainable modular methods: Satellite drawing, UI elements, ...
+- [ ] 6:
