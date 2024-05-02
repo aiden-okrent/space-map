@@ -5,7 +5,7 @@ from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QApplication
 
-from controller import ApplicationController
+from src.controllers.controller import ApplicationController
 
 try:
     from ctypes import windll  # only available on Windows OS
