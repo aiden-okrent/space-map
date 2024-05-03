@@ -5,7 +5,7 @@ import datetime
 import os
 import socket
 
-from .satellite import Satellite
+from src.models.satellite import Satellite
 
 TLE_DIR = "src/data/tle"
 
@@ -16,7 +16,7 @@ class SatelliteFactory:
         if not os.path.exists(TLE_DIR):
             os.makedirs(TLE_DIR)
 
-    def getPath(self, satnum: str):
+    def getPath(self, satnum):
         """Get the path to the TLE file for a given satnum.
 
         Args:
@@ -30,7 +30,7 @@ class SatelliteFactory:
         """
         if satnum:
             for filename in os.listdir(TLE_DIR):
-                if satnum in filename:
+                if str(satnum) in filename:
                     return os.path.join(TLE_DIR, filename)
             return None
         else:
@@ -89,12 +89,12 @@ class SatelliteFactory:
         import urllib.request
 
         async def download_tle_data(satnum: str):
-            url = "https://celestrak.org/NORAD/elements/gp.php?CATNR=" + satnum + "&FORMAT=TLE"
+            url = "https://celestrak.org/NORAD/elements/gp.php?CATNR=" + str(satnum) + "&FORMAT=TLE"
             try:
                 socket.setdefaulttimeout(8)
                 response = await asyncio.get_event_loop().run_in_executor(None, urllib.request.urlopen, url)
                 tle_data = await asyncio.get_event_loop().run_in_executor(None, response.read)
-                with open(os.path.join("src/data/tle_data", satnum + ".tle"), 'wb') as file:
+                with open(os.path.join(TLE_DIR, str(satnum) + ".tle"), 'wb') as file:
                     file.write(tle_data)
             except Exception as e:
                 print("Error occurred while loading TLE file:", str(e))
@@ -104,12 +104,12 @@ class SatelliteFactory:
         if file:
             tle_data = self.openTLE(file)
             if not tle_data:
-                print("No TLE data found for satnum: " + satnum, "in path: " + file)
+                print("No TLE data found for satnum: " + str(satnum), "in path: " + file)
                 return None
             else:
                 if "No GP data found" in tle_data:
                     os.remove(file)
-                    print("No satellite found in Celestrak database for satnum: " + satnum)
+                    print("No satellite found in Celestrak database for satnum: " + str(satnum))
                     return None
                 else:
                     return tle_data
@@ -130,7 +130,7 @@ class SatelliteFactory:
 
         path = self.getPath(satnum)
         if not path:
-            print("No existing TLE file found for satnum " + satnum, "downloading new TLE file from Celestrak database.")
+            print("No existing TLE file found for satnum " + str(satnum), "downloading new TLE file from Celestrak database.")
             tle_data = self.fetchTLE(satnum)
             path = self.getPath(satnum)
         else:
@@ -139,12 +139,12 @@ class SatelliteFactory:
         if not tle_data == None:
             satellite = Satellite(line1=tle_data[1], line2=tle_data[2], name=tle_data[0].strip())
             if not satellite.epochValid_at(datetime.datetime.now()):
-                print("Epoch is invalid for satellite with catalog ID: " + satnum, "within a margin of " + str(14), "days. Requesting fresh TLE data.")
+                print("Epoch is invalid for satellite with catalog ID: " + str(satnum), "within a margin of " + str(14), "days. Requesting fresh TLE data.")
                 tle_data = self.fetchTLE(satnum)
                 satellite = Satellite(line1=tle_data[1], line2=tle_data[2], name=tle_data[0].strip())
             return satellite
         else:
-            print("Failed to build Satellite object for Catalog ID: " + satnum, "because the TLE data returned None.")
+            print("Failed to build Satellite object for Catalog ID: " + str(satnum), "because the TLE data returned None.")
             return None
 
 

@@ -7,6 +7,8 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QTextEdit,
     QToolBar,
     QWidget,
 )
@@ -59,4 +61,16 @@ class MainToolBar(QToolBar):
         setSimSpeedSpinBox.valueChanged.connect(self.controller.setSimSpeed)
         setSimSpeedLayout.addWidget(setSimSpeedSpinBox)
         self.addWidget(setSimSpeedWidget)
+
+        addSatelliteWidget = QWidget()
+        addSatelliteLayout = QHBoxLayout()
+        addSatelliteWidget.setLayout(addSatelliteLayout)
+        addSatelliteLayout.addWidget(QLabel('Add Satellite:'))
+        addSatelliteTextEdit = QLineEdit()  # Changed QTextEdit to QLineEdit
+        addSatelliteTextEdit.setPlaceholderText('Enter Satellite Number')
+        addSatelliteTextEdit.setMaxLength(5)
+        addSatelliteTextEdit.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        addSatelliteTextEdit.editingFinished.connect(lambda: self.controller.addSatellite(int(addSatelliteTextEdit.text())))
+        addSatelliteLayout.addWidget(addSatelliteTextEdit)
+        self.addWidget(addSatelliteWidget)
 

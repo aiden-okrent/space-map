@@ -1,12 +1,10 @@
 import datetime
-import threading
 from enum import Enum, auto
-from time import sleep
 from typing import Any, Dict, List, Tuple, Union
 
-import keyboard
 from dateutil import tz
 from matplotlib.pylab import f
+from PySide6.QtCore import QTimer, Slot
 from skyfield.api import load
 from skyfield.timelib import Time, Timescale
 
@@ -20,92 +18,68 @@ class SimulationStatus(Enum):
     def __str__(self) -> str:
         return super().__str__().capitalize()
 
+class SimulationSingleton(type):
+    _instances: Dict[type, Any] = {}
 
-class Simulation():
-    def __init__(self, controller, epoch: datetime.datetime = None, speed: float = 1.0) -> None:
-        super().__init__()
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+        if cls not in cls._instances:
+            instance = super().__call__(*args, **kwargs)
+            cls._instances[cls] = instance
+        return cls._instances[cls]
+
+class Simulation(metaclass=SimulationSingleton):
+    def __init__(self, controller=None) -> None:
         self.status = SimulationStatus.STOPPED
-
-        self.epoch = epoch or datetime.datetime.now(tz=tz.tzutc())  # current time in the simulation (UTC)
-        self.speed = speed  # multiplier for the speed of the simulation
-
-        self.maxSpeed = 99.0  # max speed
-
-        self.ts = load.timescale()  # used for 'Time' objects
-        self.lock = threading.Lock()
-        self.thread = threading.Thread
+        self.epoch = datetime.datetime.now(tz=tz.tzutc())
+        self.speed = 1.0
+        self.maxSpeed = 99.0
+        self.ts = load.timescale()
+        self.timer = QTimer()
+        self.timer.timeout.connect(self._run)
 
     def start(self) -> None:
-        with self.lock:
+        if not self.timer.isActive():
             self._setStatus(SimulationStatus.RUNNING)
 
     def stop(self) -> None:
-        with self.lock:
+        if self.timer.isActive():
+            self.timer.stop()
             self._setStatus(SimulationStatus.STOPPED)
 
     def pause(self) -> None:
-        with self.lock:
+        if self.timer.isActive():
+            self.timer.stop()
             self._setStatus(SimulationStatus.PAUSED)
 
     def resume(self) -> None:
-        with self.lock:
+        if not self.timer.isActive():
             self._setStatus(SimulationStatus.RUNNING)
 
     def setSpeed(self, speed: float) -> None:
-        with self.lock:
-            if speed >= 0:
-                self.speed = min(speed, self.maxSpeed)
-            else:
-                self.speed = max(speed, -self.maxSpeed)
+        self.speed = min(max(speed, -self.maxSpeed), self.maxSpeed)
+        if self.status == SimulationStatus.RUNNING:
+            self.timer.setInterval(1000 / abs(self.speed) if self.speed != 0 else self.speed)
 
     def loadEpoch(self, epoch: datetime.datetime) -> None:
-        with self.lock:
-            self.epoch = epoch
+        self.epoch = epoch
 
-    def now(self) -> datetime.datetime:
-        """Get the current time in the simulation as a datetime object."""
+    def now_Time(self) -> Time:
+        return self.ts.utc(self.epoch)
+
+    def now_datetime(self) -> datetime.datetime:
         return self.epoch
 
+    @Slot()
     def _run(self) -> None:
-        try:
-            while self.status != SimulationStatus.STOPPED:
-                if self.status == SimulationStatus.RUNNING:
-                    time_increment = datetime.timedelta(seconds=(1 if self.speed >= 0 else -1))
-                    self.epoch += time_increment * abs(self.speed)
-                    sleep(1 / abs(self.speed))
-                    print(f"Running sim at {self.speed:.2f}x, Current Time={self._strftime()}  ", end="\r", flush=True)
-                elif self.status == SimulationStatus.PAUSED:
-                    sleep(1 / abs(self.speed) if self.speed != 0 else 1)
-                    print(f"Running sim Paused at Current Time={self._strftime()}", end="\r", flush=True)
-        except Exception as e:
-            self._setStatus(SimulationStatus.ERROR)
-            print(f"Error: {e}")
+        time_increment = datetime.timedelta(seconds=(1 if self.speed >= 0 else -1))
+        self.epoch += time_increment * abs(self.speed)
+        print(f"Running sim at {self.speed:.2f}x, Current Time={self._strftime()}  ", end="\r", flush=True)
 
-    def _setStatus(self, newStatus: SimulationStatus) -> None:  # state machine for simulation
-        if self.status == newStatus:
-            return
-        if self.status == SimulationStatus.ERROR:
-            raise RuntimeError("Simulation is in an error state, all operations are halted and must be reset.")
-
-        if newStatus == SimulationStatus.RUNNING:
-            if self.status == SimulationStatus.STOPPED:
-                self.status = SimulationStatus.RUNNING
-                self.thread = threading.Thread(target=self._run, daemon=True)
-                self.thread.start()
-                print(f"\nSimulation started at {self._strftime()}")
-            elif self.status == SimulationStatus.PAUSED:
-                self.status = SimulationStatus.RUNNING
-
-        elif newStatus == SimulationStatus.STOPPED:
-            if self.status == SimulationStatus.RUNNING or self.status == SimulationStatus.PAUSED:
-                self.status = SimulationStatus.STOPPED
-                if self.thread.is_alive():
-                    self.thread.join()
-                print(f"\nSimulation stopped at {self._strftime()}")
-
-        elif newStatus == SimulationStatus.PAUSED:
-            if self.status == SimulationStatus.RUNNING:
-                self.status = SimulationStatus.PAUSED
+    def _setStatus(self, newStatus: SimulationStatus) -> None:
+        if self.status != newStatus:
+            if newStatus == SimulationStatus.RUNNING and self.status in {SimulationStatus.STOPPED, SimulationStatus.PAUSED}:
+                self.timer.start(1000 / abs(self.speed))
+            self.status = newStatus
 
     def _strftime(self) -> str:
         format = "%Y-%m-%d %I:%M:%S %p %Z"

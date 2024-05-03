@@ -79,5 +79,3 @@ class MainView(AbstractWindow):
         self.MainToolBar = MainToolBar(self, self.controller)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.MainToolBar)
         self.MainToolBar.addSeparator()
-
-        print(self.centralWidget())
