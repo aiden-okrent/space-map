@@ -1,9 +1,10 @@
+import datetime
 import threading
-from datetime import datetime, timedelta, tzinfo
 from enum import Enum, auto
 from time import sleep
 from typing import Any, Dict, List, Tuple, Union
 
+import keyboard
 from dateutil import tz
 from matplotlib.pylab import f
 from skyfield.api import load
@@ -21,14 +22,14 @@ class SimulationStatus(Enum):
 
 
 class Simulation():
-    def __init__(self, speed: float = 1.0, epoch: datetime = None) -> None:
+    def __init__(self, controller, epoch: datetime.datetime = None, speed: float = 1.0) -> None:
         super().__init__()
         self.status = SimulationStatus.STOPPED
 
-        self.epoch = epoch or datetime.now(tz=tz.tzutc())  # current time in the simulation (UTC)
+        self.epoch = epoch or datetime.datetime.now(tz=tz.tzutc())  # current time in the simulation (UTC)
         self.speed = speed  # multiplier for the speed of the simulation
 
-        self.maxSpeed = 100.0  # max speed
+        self.maxSpeed = 99.0  # max speed
 
         self.ts = load.timescale()  # used for 'Time' objects
         self.lock = threading.Lock()
@@ -57,22 +58,22 @@ class Simulation():
             else:
                 self.speed = max(speed, -self.maxSpeed)
 
-    def loadEpoch(self, epoch: datetime) -> None:
+    def loadEpoch(self, epoch: datetime.datetime) -> None:
         with self.lock:
             self.epoch = epoch
 
-    def now(self) -> datetime:
-        """Get the current time in the simulation."""
+    def now(self) -> datetime.datetime:
+        """Get the current time in the simulation as a datetime object."""
         return self.epoch
 
     def _run(self) -> None:
         try:
             while self.status != SimulationStatus.STOPPED:
                 if self.status == SimulationStatus.RUNNING:
-                    time_increment = timedelta(seconds=(1 if self.speed >= 0 else -1))
+                    time_increment = datetime.timedelta(seconds=(1 if self.speed >= 0 else -1))
                     self.epoch += time_increment * abs(self.speed)
                     sleep(1 / abs(self.speed))
-                    print(f"Running sim at {self.speed}x, Current Time={self._strftime()}  ", end="\r", flush=True)
+                    print(f"Running sim at {self.speed:.2f}x, Current Time={self._strftime()}  ", end="\r", flush=True)
                 elif self.status == SimulationStatus.PAUSED:
                     sleep(1 / abs(self.speed) if self.speed != 0 else 1)
                     print(f"Running sim Paused at Current Time={self._strftime()}", end="\r", flush=True)
@@ -106,7 +107,6 @@ class Simulation():
             if self.status == SimulationStatus.RUNNING:
                 self.status = SimulationStatus.PAUSED
 
-
     def _strftime(self) -> str:
         format = "%Y-%m-%d %I:%M:%S %p %Z"
-        return self.epoch.strftime(format)
+        return self.epoch.replace(tzinfo=tz.tzutc()).astimezone(tz.tzlocal()).strftime(format)

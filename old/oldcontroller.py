@@ -6,12 +6,11 @@ The controller is the first thing run by main.py and is responsible for setting 
 import keyboard
 import matplotlib.pyplot as plt
 import numpy as np
+from controller_protocol import ControllerProtocol
 from dateutil import tz
+from model import Earth, Satellite, TLEManager
 from mpl_toolkits.basemap import Basemap
 from skyfield.api import Timescale, load
-
-from controller_protocol import ControllerProtocol
-from model import Earth, Satellite, TLEManager
 from view import Globe3DView, MainView
 
 

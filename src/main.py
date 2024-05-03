@@ -1,11 +1,10 @@
 import sys
 
 from PySide6.QtCore import QCoreApplication, Qt
-from PySide6.QtGui import QIcon, QPainter, QPixmap
-from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QApplication
 
 from src.controllers.controller import ApplicationController
+from src.services.icon_service import IconService
 
 try:
     from ctypes import windll  # only available on Windows OS
@@ -18,26 +17,18 @@ def main():
     QCoreApplication.setOrganizationName("MisterBluSky")
     QCoreApplication.setOrganizationDomain("misterblusky.com")
     QCoreApplication.setApplicationName("space-map")
-    sys.argv += ['-platform', 'windows:darkmode=2'] # dark mode for windows 11
-    app = QApplication(sys.argv)
-    app.setStyle('Fusion') # set style to Fusion
+    sys.argv += ['-platform', 'windows:darkmode=2']
 
-    icon_path = ('src/assets/icons/gis--network.svg')
-    icon = QIcon(str(icon_path))
-    pixmap = QPixmap(icon.pixmap(512, 512))  # Set the desired resolution here
-    renderer = QSvgRenderer(icon_path)
-    pixmap = QPixmap(512, 512)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    renderer.render(painter)
-    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-    painter.fillRect(pixmap.rect(), Qt.GlobalColor.white)
-    painter.end()
-    app.setWindowIcon(pixmap)
+    app = QApplication(sys.argv)
+    app.setStyle('Fusion')
+
+    taskbar_icon = IconService().getIcon('gis--network.svg', Qt.GlobalColor.darkGray)
+    app.setWindowIcon(taskbar_icon)
 
     appController = ApplicationController(app)
     appController.run()
 
+    app.aboutToQuit.connect(appController.kill)
     sys.exit(app.exec())
 
 # run application

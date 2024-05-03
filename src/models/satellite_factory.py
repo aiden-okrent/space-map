@@ -5,7 +5,7 @@ import datetime
 import os
 import socket
 
-from src.models.satellite import Satellite
+from .satellite import Satellite
 
 TLE_DIR = "src/data/tle"
 
