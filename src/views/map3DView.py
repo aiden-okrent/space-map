@@ -2,6 +2,7 @@
 from cgitb import text
 
 import numpy as np
+from line_profiler import LineProfiler
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from PySide6.QtCore import QPoint, Qt, QTimer
@@ -84,13 +85,14 @@ class Map3DView(QOpenGLWidget):
 
     def drawSphere(self, data):
         glActiveTexture(GL_TEXTURE0)
+        texture_id = self.model.getTexture(data['texture_key'])
+        glBindTexture(GL_TEXTURE_2D, texture_id)
+
         glMatrixMode(GL_TEXTURE)
-        self.bindTexture(data['texture'])
         glLoadIdentity()
-        glTranslatef(*data['textureOffset'])
+        glTranslatef(*data['texture_offset'])
+
         glMatrixMode(GL_MODELVIEW)
-
-
         glTranslatef(*data['translation'])
         glRotatef(*data['rotation4f'])
         glColor4f(*data['colorf4'])
@@ -205,30 +207,6 @@ class Map3DView(QOpenGLWidget):
         glEnd()
 
         self.resetGLDefaults()
-
-    def bindTexture(self, imagePath):
-        """Bind a texture from an image file."""
-        texture = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, texture)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        image = QImage(imagePath)
-        image = image.convertToFormat(QImage.Format.Format_RGBA8888)
-        image = image.mirrored(False, True)
-        glTexImage2D(
-            GL_TEXTURE_2D,
-            0,
-            GL_RGBA,
-            image.width(),
-            image.height(),
-            0,
-            GL_RGBA,
-            GL_UNSIGNED_BYTE,
-            image.bits()
-        )
-        return texture
 
     def get2DScreenCoordsFrom3D(self, x, y, z):
         """ Convert 3D coordinates to 2D screen coordinates."""

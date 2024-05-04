@@ -17,8 +17,8 @@ class Model3D(QObject):
             'lights': [
                 {'name': 'sun', 'translation': (1000, 0, 0), 'ambient': (0.2, 0.2, 0.2, 1), 'diffuse': (1, 1, 1, 1), 'specular': (1, 1, 1, 1), 'enabled': True},
             ],
-            'stars': {'texture': self.TextureService.getTexture('low', 'stars'), 'textureOffset': (0, 0, 0), 'translation': (0, 0, 0), 'rotation4f': (0, 0, 0, 1), 'radius': 20, 'slices': 16, 'stacks': 16, 'visible': True, 'colorf4': (1, 1, 1, 1)},
-            'earth': {'texture': self.TextureService.getTexture('low', 'earth'), 'textureOffset': (0.75, 0, 0), 'translation': (0, 0, 0), 'rotation4f': self.controller.Earth.tilt, 'radius': 1, 'slices': 16, 'stacks': 16, 'visible': True, 'colorf4': (1, 1, 1, 1)},
+            'stars': {'texture_key': 'stars', 'texture_quality': 'low', 'texture_offset': (0, 0, 0), 'translation': (0, 0, 0), 'rotation4f': (0, 0, 0, 1), 'radius': 1000, 'slices': 16, 'stacks': 16, 'visible': True, 'colorf4': (1, 1, 1, 1)},
+            'earth': {'texture_key': 'earth', 'texture_quality': 'low', 'texture_offset': (0.75, 0, 0), 'translation': (0, 0, 0), 'rotation4f': self.controller.Earth.tilt, 'radius': 1, 'slices': 16, 'stacks': 16, 'visible': True, 'colorf4': (1, 1, 1, 1)},
             'XYZAxis': {'lineWidth': 3, 'lines': [
                 {'color4f': (1, 0, 0, 1), 'vertices': [(0, 0, 0), (1, 0, 0)], 'length': 1, 'translation': (-1, -1, -1), 'rotation4f': (0, 0, 0, 1)}, # X Axis is Red
                 {'color4f': (0, 1, 0, 1), 'vertices': [(0, 0, 0), (0, 1, 0)], 'length': 1, 'translation': (-1, -1, -1), 'rotation4f': (0, 0, 1, 0)}, # Y Axis is Green
@@ -69,4 +69,8 @@ class Model3D(QObject):
                 self.data['satellites'].remove(sat)
                 self.dataChanged.emit()
                 break
+
+    def getTexture(self, key):
+        item = self.data[key]
+        return self.TextureService.getTexture(item['texture_quality'], item['texture_key'])
 
