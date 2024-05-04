@@ -113,19 +113,18 @@ class Map3DView(QOpenGLWidget):
             self.drawLight(light)
         self.drawStars(data['stars'])
         self.drawLines(data['XYZAxis'])
-        for sat in data['satellites']:
-            self.drawSatellite(sat.getData())
-            self.drawOrbitalPath(sat.getData()['orbitalPath'])
 
         glPushMatrix()
+        self.applyRotation(data['rotations']['earthAxis'])
+        for sat in data['satellites']:
+            pass
+            #self.drawSatellite(sat.getData())
+            #self.drawOrbitalPath(sat.getData()['orbitalPath'])
+
+        self.applyRotation(data['rotations']['GMST']) # Rotate the frame to the current GMST
         self.drawEarth(data['earth'])
         self.drawCylinders(data['poles'])
         glPopMatrix()
-
-        #glRotatef(self.Earth.axial_tilt, 0, 1, 0) # Rotate the Earth's axial tilt
-
-        #self.drawSatellite(satellite, now=time, color=QColor(255, 255, 255)) # Draw the satellite at the current time with a white color
-        #self.drawSatelliteOrbit(satellite) # Draw the satellite's orbital path
 
     def updateCamera(self):
         self.camera['phi'] = max(min(self.camera['phi'], 89), -89)
@@ -184,6 +183,9 @@ class Map3DView(QOpenGLWidget):
         glDepthMask(GL_FALSE)
         self.drawSphere(data)
         self.resetGLDefaults()
+
+    def applyRotation(self, rotation):
+        glRotatef(rotation, 0, 0, 1)
 
     def drawEarth(self, data):
         #rotation = self.Earth.calculateRotation(self.controller.Timescale.now())

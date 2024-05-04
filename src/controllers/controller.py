@@ -17,7 +17,7 @@ class ApplicationController():
     def __init__(self, app: QApplication):
         self.app = app
 
-        #self.Simulation = Simulation(self)
+        self.Simulation = Simulation(self)
 
         self.SatelliteFactory = SatelliteFactory()
         self.MainView = MainView(self)
@@ -35,29 +35,23 @@ class ApplicationController():
 
     # Simulation Controls
     def startSim(self):
-        return
-        #self.Simulation.start()
+        self.Simulation.start()
 
     def stopSim(self):
-        return
-        #self.Simulation.stop()
+        self.Simulation.stop()
 
     def setSimSpeed(self, speed: float):
-        return
-        #self.Simulation.setSpeed(speed)
+        self.Simulation.setSpeed(speed)
 
     def setSimEpoch(self, epoch: datetime.datetime):
-        return
-        #self.Simulation.loadEpoch(epoch)
+        self.Simulation.loadEpoch(epoch)
 
     def getSimEpoch(self):
-        return
-        #return self.Simulation.now_datetime()
+        return self.Simulation.now_datetime()
 
     def kill(self):
-        return
-        #self.Simulation.stop()
-        #self.app.quit()
+        self.Simulation.stop()
+        self.app.quit()
 
     # Satellite Controls
     def addSatellite(self, satnum: int):

@@ -34,6 +34,7 @@ class TextureService:
                 GL_UNSIGNED_BYTE,
                 image.bits()
             )
+            print(f"Loading texture: {imagePath}")
             self.textures[imagePath] = texture
         return self.textures[imagePath]
 
@@ -43,7 +44,6 @@ class TextureService:
         if os.path.exists(quality_dir):
             for texture_file in os.listdir(quality_dir):
                 if texture_file.startswith(texture_key):
-                    print(f"Loading texture: {texture_file}, quality: {quality}")
                     return os.path.join(quality_dir, texture_file)
         return None
 

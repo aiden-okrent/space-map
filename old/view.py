@@ -25,6 +25,7 @@ For space-map, the View has several components:
 
 from enum import Enum
 
+from controller_protocol import ControllerProtocol
 from PySide6 import QtSvg
 from PySide6.QtCore import (
     QDateTime,
@@ -71,8 +72,6 @@ from PySide6.QtWidgets import (
 from skyfield.timelib import Time
 from skyfield.toposlib import GeographicPosition
 from skyfield.units import Angle, Distance, Velocity
-
-from controller_protocol import ControllerProtocol
 
 
 class AbstractWindow(QMainWindow):
