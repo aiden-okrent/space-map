@@ -12,7 +12,7 @@ class Earth(Geoid):
     def __init__(self):
         super().__init__('Earth', 6378137.0, 298.257223563) # WGS84 Geoid
         self.GM = 398600.4418 # Standard gravitational parameter of Earth [km^3/s^2]
-        self.axialTilt = 23.439291 # Earth's axial tilt [degrees]
+        self.tilt = (-23.439291, 0, 1, 0) # Earth's axial tilt in degrees
 
     def getGMST_at(self, time: Time) -> float:
         """Get the Greenwich Mean Sidereal Time (GMST) at a given time.

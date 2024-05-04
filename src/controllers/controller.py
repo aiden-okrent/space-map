@@ -5,6 +5,7 @@ import keyboard
 from dateutil import tz
 from PySide6.QtWidgets import QApplication
 
+from src.models.earth import Earth
 from src.models.model3D import Model3D
 from src.models.satellite_factory import SatelliteFactory
 from src.models.simulation import Simulation, SimulationSingleton
@@ -19,8 +20,9 @@ class ApplicationController():
         #self.Simulation = Simulation(self)
 
         self.SatelliteFactory = SatelliteFactory()
-        self.Model3D = Model3D(self)
         self.MainView = MainView(self)
+        self.Earth = Earth()
+        self.Model3D = Model3D(self)
         self.Map3DView = Map3DView(self, self.MainView, self.Model3D)
 
         self.MainView.setCentralWidget(self.Map3DView)
