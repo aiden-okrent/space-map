@@ -34,7 +34,7 @@ class Map3DView(QOpenGLWidget):
             'phi': 0,
             'theta': 0,
             'zoom': 5 * earthRadius,
-            'maxZoom': 10 * earthRadius,
+            'maxZoom': 30 * earthRadius,
             'minZoom': .12 * earthRadius,
         }
 
@@ -137,8 +137,12 @@ class Map3DView(QOpenGLWidget):
         self.applyRotation(data['rotations']['earth_Oblique'])
 
         for sat in data['satellites']:
-            self.drawSatellite(sat.data)
-            self.drawOrbitalPath(sat.data['orbitalPath'])
+            if sat.infoData['hidden']:
+                continue
+            renderData = sat.renderData
+            self.drawSatellite(renderData)
+            self.drawLines(renderData['toSurface'])
+            self.drawOrbitalPath(renderData['orbitalPath'])
 
         self.applyRotation(data['rotations']['earth_Spin'])
         self.drawSphere(data['earth'])
@@ -163,6 +167,8 @@ class Map3DView(QOpenGLWidget):
         self.update()
 
     def drawLines(self, data):
+        if not data['visible']:
+            return
         glDisable(GL_LIGHTING)
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, 0)

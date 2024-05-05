@@ -72,7 +72,8 @@ class MainToolBar(QToolBar):
         setSimSpeedLayout.addWidget(setSimSpeedSpinBox)
         self.addWidget(setSimSpeedWidget)
 
-        self.addAction('Toggle Orbits', self.Controller.toggleOrbit)
+        self.addAction('Toggle Orbits', lambda: self.Controller.toggleOrbitVisibility())
+        self.addAction('Toggle Hidden', lambda: self.Controller.toggleHidden())
 
         addSatelliteWidget = QWidget()
         addSatelliteLayout = QHBoxLayout()
@@ -82,8 +83,19 @@ class MainToolBar(QToolBar):
         addSatelliteTextEdit.setPlaceholderText('Enter Query')
         #addSatelliteTextEdit.setMaxLength(5)
         addSatelliteTextEdit.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-        addSatelliteTextEdit.editingFinished.connect(lambda: self.Controller.processQuery(addSatelliteTextEdit.text()))
+        addSatelliteTextEdit.editingFinished.connect(lambda: self.Controller.searchSatellites(addSatelliteTextEdit.text(), True))
         addSatelliteLayout.addWidget(addSatelliteTextEdit)
         self.addWidget(addSatelliteWidget)
+
+        removeSatelliteWidget = QWidget()
+        removeSatelliteLayout = QHBoxLayout()
+        removeSatelliteWidget.setLayout(removeSatelliteLayout)
+        removeSatelliteLayout.addWidget(QLabel('Remove:'))
+        removeSatelliteTextEdit = QLineEdit()
+        removeSatelliteTextEdit.setPlaceholderText('Enter Query')
+        removeSatelliteTextEdit.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        removeSatelliteTextEdit.editingFinished.connect(lambda: self.Controller.searchSatellites(removeSatelliteTextEdit.text(), False))
+        removeSatelliteLayout.addWidget(removeSatelliteTextEdit)
+        self.addWidget(removeSatelliteWidget)
 
         self.Simulation.epochChanged.connect(lambda dt: setSimEpochDatetime.setDateTime(dt))

@@ -1,6 +1,6 @@
 #
 import datetime
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 import keyboard
 from dateutil import tz
@@ -14,8 +14,12 @@ from src.utilities.singleton import Singleton
 from src.views.mainView import MainView
 from src.views.map3DView import Map3DView
 
+if TYPE_CHECKING:
+    from src.models.satellite import Satellite
 
 class ApplicationController(metaclass=Singleton):
+
+    Satellite: 'Satellite'
 
     def __init__(self, app: QApplication):
         self.app = app
@@ -30,11 +34,15 @@ class ApplicationController(metaclass=Singleton):
 
         self.MainView.setCentralWidget(self.Map3DView)
 
+        self.orbitsVisible = False
+        self.satsHidden = False
+
     def run(self):
         self.MainView.restoreSettings()
         self.MainView.show()
 
         self.Map3DView.run()
+        self.Simulation.start()
 
     # Simulation Controls
     def startSim(self):
@@ -58,22 +66,52 @@ class ApplicationController(metaclass=Singleton):
 
     # Satellite Controls
     def addSatellite(self, satnum: int):
-        if self.Model3D.data['satellites']:
-            for sat in self.Model3D.data['satellites']:
-                if sat.satnum == satnum:
-                    return
-        sat = self.SatelliteFactory.new(satnum)
-        self.Model3D.addSatellite(sat)
+        exists = self.satelliteInData(satnum)
+        if not exists:
+            print(f"Adding Satellite {satnum}")
+            Satellite = self.SatelliteFactory.new(satnum)
+            self.Model3D.addSatellite(Satellite)
+            self.setOrbitVisibility(self.orbitsVisible)
 
-    def processQuery(self, query: any):
-        if isinstance(query, int):
-            self.addSatellite(query)
-        elif isinstance(query, str):
-            self.addSatellites(self.SatelliteFactory.getSatsBySearch(query))
+    def satelliteInData(self, satnum: int):
+        for Satellite in self.Model3D.data['satellites']:
+            if int(Satellite.satnum) == int(satnum):
+                return True
+        return False
 
-    def toggleOrbit(self):
-        for sat in self.Model3D.data['satellites']:
-            sat.setOrbitVisible(not sat._orbitVisible)
+    def getSatelliteFromData(self, satnum: int):
+        for Satellite in self.Model3D.data['satellites']:
+            if int(Satellite.satnum) == int(satnum):
+                return Satellite
+        return None
+
+    def removeSatellite(self, satnum: int):
+        exists = self.satelliteInData(satnum)
+        if exists:
+            Satellite = self.getSatelliteFromData(satnum)
+            print(f"Removing Satellite {satnum}")
+            self.Model3D.removeSatellite(Satellite)
+
+
+    def removeSatellites(self, satnums: list):
+        for satnum in satnums:
+            self.removeSatellite(satnum)
+
+    def toggleOrbitVisibility(self):
+        self.orbitsVisible = not self.orbitsVisible
+        self.setOrbitVisibility(self.orbitsVisible)
+
+    def setOrbitVisibility(self, visible: bool):
+        for Satellite in self.Model3D.data['satellites']:
+            Satellite.setOrbitVisibility(visible)
+
+    def toggleHidden(self):
+        self.satsHidden = not self.satsHidden
+        self.setHidden(self.satsHidden)
+
+    def setHidden(self, hidden: bool):
+        for Satellite in self.Model3D.data['satellites']:
+            Satellite.setHidden(hidden)
 
     def addSatellites(self, satnums: list):
         for satnum in satnums:
@@ -82,5 +120,16 @@ class ApplicationController(metaclass=Singleton):
     def addAllSatellites(self):
         self.addSatellites(self.SatelliteFactory.listDirSatnums())
 
-    def searchSatellites(self, search: str):
-        self.addSatellites(self.SatelliteFactory.getSatsBySearch(search))
+    def searchSatellites(self, search: any, isAdd: bool):
+        # if its add, search for the satellite and add it like normal
+        if isAdd:
+            if search.isdigit():
+                self.addSatellite(int(search))
+            else:
+                self.addSatellites(self.SatelliteFactory.getSatsBySearch(search))
+        # if its not add, search for the satellite in the model and remove it
+        else:
+            if search.isdigit():
+                self.removeSatellite(int(search))
+            else:
+                self.removeSatellites(self.SatelliteFactory.getSatsBySearch(search))

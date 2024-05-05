@@ -68,6 +68,7 @@ class Model3D(QObject):
             },
             'XYZAxis': {
                 'lineWidth': 3,
+                'visible': True,
                 'lines': [
                     {
                     'color4f': (1, 0, 0, 1),
@@ -141,12 +142,10 @@ class Model3D(QObject):
         print(f"Added satellite {satellite.name} to 3D model")
         self.dataChanged.emit()
 
-    def removeSatellite(self, satnum):
-        for sat in self._satellites:
-            if sat.satnum == satnum:
-                self._satellites.remove(sat)
-                self.dataChanged.emit()
-                break
+    def removeSatellite(self, satellite: Satellite):
+        self._satellites.remove(satellite)
+        print(f"Removed satellite {satellite.name} from 3D model")
+        self.dataChanged.emit()
 
     def getTexture(self, key):
         item = self.data[key]

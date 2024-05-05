@@ -1,12 +1,11 @@
 #
 import os
-from distutils.command import build
 
+from config.paths import ASSETS
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QImage, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
-ICONS_DIR = 'assets\icons'
 
 class IconService:
     """ Icon Service Class, responsible for retrieving and unpacking svg icons for the application."""
@@ -15,7 +14,7 @@ class IconService:
 
     def getIcon(self, name: str, color: Qt.GlobalColor):
         """ Returns a QIcon object from a svg file in the 'assets\icons' directory."""
-        svg = os.path.join(ICONS_DIR, name)
+        svg = os.path.join(ASSETS, 'icons', name)
         if not os.path.exists(svg):
             return None
         return self.build(svg, color)

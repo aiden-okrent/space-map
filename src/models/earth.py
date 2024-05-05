@@ -1,5 +1,9 @@
 import os
+import sys
+from math import cos, radians, sin
+from typing import Tuple
 
+import numpy as np
 from skyfield.timelib import Time
 from skyfield.toposlib import Geoid
 
@@ -25,3 +29,21 @@ class Earth(Geoid):
             float: Greenwich Mean Sidereal Time (GMST) at the given time in degrees.
         """
         return time.gmst * 15 # GMST is in hours, convert to degrees
+
+    def latlon_to_position(self, lat: float, lon: float) -> np.ndarray:
+        """Convert latitude and longitude to a position on the Earth's surface.
+
+        Args:
+            lat (float): Latitude in degrees.
+            lon (float): Longitude in degrees.
+
+        Returns:
+            np.ndarray: Position on the Earth's surface in ECEF coordinates [x, y, z] in km.
+        """
+
+        # Convert latitude and longitude to ECEF coordinates
+        x = self.radius.km * cos(radians(lat)) * cos(radians(lon))
+        y = self.radius.km * cos(radians(lat)) * sin(radians(lon))
+        z = self.radius.km * sin(radians(lat))
+
+        return np.array([x, y, z])

@@ -40,3 +40,6 @@ def get_ray(camera_position, target_position):
     direction = np.array(target_position) - np.array(camera_position)
     normalized_direction = direction / np.linalg.norm(direction)
     return camera_position, normalized_direction
+
+def normalize(vector):
+    return vector / np.linalg.norm(vector)

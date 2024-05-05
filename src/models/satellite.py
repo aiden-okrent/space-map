@@ -6,6 +6,8 @@ from skyfield.api import EarthSatellite
 from skyfield.elementslib import osculating_elements_of
 from skyfield.timelib import Time
 
+from utilities.math3D import normalize
+
 if TYPE_CHECKING:
     from src.controllers.controller import ApplicationController
     from src.models.simulation import Simulation
@@ -29,15 +31,25 @@ class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
         self.scale = Controller.Earth.scale
 
         self._orbitVisible = True
+        self._hidden = False
 
-    @property
-    def data(self):
-        earthRadius = self.Controller.Earth.radius.km
-        position = self.at(self.Simulation.now_Time()).position.km * self.scale
+    @property # basic info about the satellite
+    def infoData(self):
         return {
             'name': self.name,
-            'satnum': self.satnum,
+            'satnum': int(self.satnum),
             'epoch': self.epoch.utc_datetime(),
+            'hidden': self._hidden
+        }
+
+    @property # data used for rendering the satellite's position and path
+    def renderData(self):
+        earthRadius = self.Controller.Earth.radius.km
+        at = self.at(self.Simulation.now_Time())
+        position = at.position.km * self.scale
+        altitude = (at.distance().km * self.scale) - earthRadius
+        subposition = self.getSubposition_at(self.Simulation.now_Time())
+        return {
             'orbitalPath': {
                 'vertices': self.orbitalPath() * self.scale,
                 'color4f': [1.0, 0.0, 0.0, 0.3],
@@ -45,6 +57,7 @@ class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
                 'visible': self._orbitVisible
                 },
             'position': position,
+            'subposition': subposition,
             'model': {
                 'texture': '',
                 'translation': position,
@@ -52,16 +65,43 @@ class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
                 'radius': .01 * earthRadius,
                 'slices': 8,
                 'stacks': 8,
-                'visible': True,
+                'visible': False,
                 'colorf4': (1, 1, 1, 1)
             },
+            'toSurface': {
+                'lineWidth': 1.0,
+                'visible': True,
+                'lines': [
+                    {
+                    'color4f': (0.5, 0.5, 0.5, 1),
+                    'vertices': [[0, 0, 0], normalize(position)],
+                    'length': altitude,
+                    'translation': position - (normalize(position) * altitude),
+                    'rotation4f': (0, 0, 1, 0)
+                    }
+                ]
+            }
         }
+
+
+
 
     def update(self, data):
         for key, value in data.items():
             setattr(self, key, value)
 
-    def setOrbitVisible(self, visible: bool):
+    def getSubposition_at(self, time: Time) -> np.ndarray:
+
+        subpoint = self.at(time).subpoint()
+        lat = subpoint.latitude.degrees
+        lon = subpoint.longitude.degrees
+
+        return self.Controller.Earth.latlon_to_position(lat, lon)
+
+    def setHidden(self, hidden: bool):
+        self._hidden = hidden
+
+    def setOrbitVisibility(self, visible: bool):
         self._orbitVisible = visible
 
     def epochValid_at(self, time: datetime.datetime, margin: int = 7) -> bool:

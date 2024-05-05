@@ -9,9 +9,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.controllers.controller import ApplicationController
 
+from config.paths import TLE
+
 from src.models.satellite import Satellite
 
-TLE_DIR = "data/tle"
 
 class SatelliteFactory:
     """Factory class to manage, fetch, and build Satellite objects from TLE data."""
@@ -21,8 +22,8 @@ class SatelliteFactory:
     def __init__(self, Controller: 'ApplicationController'):
         super().__init__()
         self.Controller = Controller
-        if not os.path.exists(TLE_DIR):
-            os.makedirs(TLE_DIR)
+        if not os.path.exists(TLE):
+            os.makedirs(TLE)
 
     def getPath(self, satnum):
         """Get the path to the TLE file for a given satnum.
@@ -37,9 +38,9 @@ class SatelliteFactory:
             str: The path to the TLE file.
         """
         if satnum:
-            for filename in os.listdir(TLE_DIR):
+            for filename in os.listdir(TLE):
                 if str(satnum) in filename:
-                    return os.path.join(TLE_DIR, filename)
+                    return os.path.join(TLE, filename)
             return None
         else:
            print("No Catalog ID provided.")
@@ -52,8 +53,8 @@ class SatelliteFactory:
             dict: Dictionary containing the Catalog ID and the filename of each TLE file in the directory.
         """
         tle_dict = {}
-        for filename in os.listdir(TLE_DIR):
-            with open(os.path.join(TLE_DIR, filename), 'r') as file:
+        for filename in os.listdir(TLE):
+            with open(os.path.join(TLE, filename), 'r') as file:
                 tle_data = file.readlines()
                 tle_dict[tle_data[0].strip()] = filename.replace(".tle", "")
         return tle_dict
@@ -102,7 +103,7 @@ class SatelliteFactory:
                 socket.setdefaulttimeout(8)
                 response = await asyncio.get_event_loop().run_in_executor(None, urllib.request.urlopen, url)
                 tle_data = await asyncio.get_event_loop().run_in_executor(None, response.read)
-                with open(os.path.join(TLE_DIR, str(satnum) + ".tle"), 'wb') as file:
+                with open(os.path.join(TLE, str(satnum) + ".tle"), 'wb') as file:
                     file.write(tle_data)
             except Exception as e:
                 print("Error occurred while loading TLE file:", str(e))
@@ -129,7 +130,7 @@ class SatelliteFactory:
             list: List of Catalog IDs of satellites with TLE files.
         """
         satnums = []
-        for filename in os.listdir(TLE_DIR):
+        for filename in os.listdir(TLE):
             satnums.append(filename.replace(".tle", ""))
         return satnums
 
@@ -138,11 +139,12 @@ class SatelliteFactory:
         """
         print("Searching for satellites with search term: " + search)
         satnums = []
-        for filename in os.listdir(TLE_DIR):
-            tle_data = self.openTLE(os.path.join(TLE_DIR, filename))
+        for filename in os.listdir(TLE):
+            tle_data = self.openTLE(os.path.join(TLE, filename))
             if tle_data:
                 if search in tle_data[0]:
                     satnums.append(filename.replace(".tle", ""))
+                    print("Found satellite with search term: " + search + " in file: " + filename)
         return satnums
 
 

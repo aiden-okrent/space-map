@@ -1,10 +1,10 @@
 #
 import os
 
+from config.paths import TEXTURES
 from OpenGL.GL import *
 from PySide6.QtGui import QImage
 
-TEXTURE_DIR = 'assets/textures'
 
 class TextureService:
     """ Texture Service Class, responsible for retrieving and unpacking loading textures for 3D rendering."""
@@ -40,7 +40,7 @@ class TextureService:
 
     def findTexturePath(self, quality: str, texture: str):
         """Finds a texture path based on quality and texture."""
-        quality_dir = os.path.join(TEXTURE_DIR, quality)
+        quality_dir = os.path.join(TEXTURES, quality)
         if os.path.exists(quality_dir):
             for texture_file in os.listdir(quality_dir):
                 if texture_file.startswith(texture):

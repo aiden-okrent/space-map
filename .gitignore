@@ -1,2 +1,2 @@
-src/assets/geodata/**
-src/assets/geodata/*
+dist
+build

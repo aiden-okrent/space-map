@@ -64,7 +64,7 @@ class Simulation(QObject):
     def setSpeed(self, speed: float) -> None:
         self.speed = min(max(speed, -self.maxSpeed), self.maxSpeed)
         if self.status == SimulationStatus.RUNNING:
-            self.timer.setInterval(100 / abs(self.speed) if self.speed != 0 else self.speed)
+            self.timer.setInterval(1000 / abs(self.speed) if self.speed != 0 else self.speed)
 
     def loadEpoch(self, epoch: datetime.datetime) -> None:
         self.epoch = epoch
@@ -78,14 +78,14 @@ class Simulation(QObject):
 
     @Slot()
     def _run(self) -> None:
-        time_increment = datetime.timedelta(milliseconds=(1 if self.speed >= 0 else -1))
+        time_increment = datetime.timedelta(seconds=(1 if self.speed >= 0 else -1))
         self.epoch += time_increment * abs(self.speed)
         self.epochChanged.emit(self.epoch)
 
     def _setStatus(self, newStatus: SimulationStatus) -> None:
         if self.status != newStatus:
             if newStatus == SimulationStatus.RUNNING and self.status in {SimulationStatus.STOPPED, SimulationStatus.PAUSED}:
-                self.timer.start(100 / abs(self.speed))
+                self.timer.start(1000 / abs(self.speed))
             self.status = newStatus
 
     def _strftime(self) -> str:
