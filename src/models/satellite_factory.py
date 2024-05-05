@@ -4,15 +4,23 @@ import asyncio
 import datetime
 import os
 import socket
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.controllers.controller import ApplicationController
 
 from src.models.satellite import Satellite
 
-TLE_DIR = "src/data/tle"
+TLE_DIR = "data/tle"
 
 class SatelliteFactory:
     """Factory class to manage, fetch, and build Satellite objects from TLE data."""
-    def __init__(self):
+
+    Controller: 'ApplicationController'
+
+    def __init__(self, Controller: 'ApplicationController'):
         super().__init__()
+        self.Controller = Controller
         if not os.path.exists(TLE_DIR):
             os.makedirs(TLE_DIR)
 
@@ -114,6 +122,38 @@ class SatelliteFactory:
                 else:
                     return tle_data
 
+    def listDirSatnums(self):
+        """List all Catalog IDs of satellites with TLE files in the TLE directory.
+
+        Returns:
+            list: List of Catalog IDs of satellites with TLE files.
+        """
+        satnums = []
+        for filename in os.listdir(TLE_DIR):
+            satnums.append(filename.replace(".tle", ""))
+        return satnums
+
+    def getSatsBySearch(self, search: str):
+        """Search for satellites by opening TLE files and checking for the search term in the first line.
+        """
+        print("Searching for satellites with search term: " + search)
+        satnums = []
+        for filename in os.listdir(TLE_DIR):
+            tle_data = self.openTLE(os.path.join(TLE_DIR, filename))
+            if tle_data:
+                if search in tle_data[0]:
+                    satnums.append(filename.replace(".tle", ""))
+        return satnums
+
+
+
+    '''
+    CURTIS
+    1 59507U 98067WG  24125.41361547  .00045442  00000+0  67851-3 0  9999
+    2 59507  51.6343 172.0553 0001518  93.7234 266.3931 15.54580231  3654
+
+    '''
+
     def new(self, satnum: int):
         """Create a new Satellite object from TLE data.
 
@@ -137,11 +177,12 @@ class SatelliteFactory:
             tle_data = self.openTLE(path)
 
         if not tle_data == None:
-            satellite = Satellite(line1=tle_data[1], line2=tle_data[2], name=tle_data[0].strip())
+            satellite = Satellite(Controller=self.Controller, line1=tle_data[1], line2=tle_data[2], name=tle_data[0].strip())
+            print("Satellite built with Catalog ID: " + str(satnum))
             if not satellite.epochValid_at(datetime.datetime.now()):
                 print("Epoch is invalid for satellite with catalog ID: " + str(satnum), "within a margin of " + str(14), "days. Requesting fresh TLE data.")
                 tle_data = self.fetchTLE(satnum)
-                satellite = Satellite(line1=tle_data[1], line2=tle_data[2], name=tle_data[0].strip())
+                satellite = Satellite(Controller=self.Controller, line1=tle_data[1], line2=tle_data[2], name=tle_data[0].strip())
             return satellite
         else:
             print("Failed to build Satellite object for Catalog ID: " + str(satnum), "because the TLE data returned None.")

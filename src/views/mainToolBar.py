@@ -1,7 +1,8 @@
 #
 import datetime
+from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QDateTime, QSize, Qt
+from PySide6.QtCore import QDateTime, QObject, QSize, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QDateTimeEdit,
     QDoubleSpinBox,
@@ -13,12 +14,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+if TYPE_CHECKING:
+    from src.controllers.controller import ApplicationController
+    from src.models.simulation import Simulation
+
 
 class MainToolBar(QToolBar):
-    def __init__(self, parent, controller):
+
+    Controller: 'ApplicationController'
+    Simulation: 'Simulation'
+
+    def __init__(self, parent, Controller: 'ApplicationController'):
         super().__init__('Main Toolbar', parent)
         self.parent = parent
-        self.controller = controller
+        self.Controller = Controller
+        self.Simulation = Controller.Simulation
 
         self.setMovable(False)
         self.setFloatable(False)
@@ -28,8 +38,8 @@ class MainToolBar(QToolBar):
         self.addTools()
 
     def addTools(self):
-        self.addAction('Start Sim', self.controller.startSim)
-        self.addAction('Stop Sim', self.controller.stopSim)
+        self.addAction('Start', self.Controller.startSim)
+        self.addAction('Stop', self.Controller.stopSim)
 
         setSimEpochWidget = QWidget()
         setSimEpochLayout = QHBoxLayout()
@@ -39,11 +49,11 @@ class MainToolBar(QToolBar):
         setSimEpochDatetime.setDisplayFormat('MMMM d, yyyy h:mm:ss AP')
         setSimEpochDatetime.setCalendarPopup(True)
         setSimEpochDatetime.setDateTimeRange(QDateTime(1957, 10, 4, 0, 0, 0), QDateTime(2056, 10, 4, 0, 0, 0)) # TLE max epoch range
-        setSimEpochDatetime.setDateTime(self.controller.getSimEpoch())
+        setSimEpochDatetime.setDateTime(self.Controller.getSimEpoch())
         setSimEpochDatetime.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         setSimEpochDatetime.setButtonSymbols(QDateTimeEdit.ButtonSymbols.UpDownArrows)
         setSimEpochDatetime.setStyleSheet('QDateTimeEdit { padding: 0px; }')
-        setSimEpochDatetime.dateTimeChanged.connect(lambda dt: self.controller.setSimEpoch(dt.toPython()))
+        setSimEpochDatetime.dateTimeChanged.connect(lambda dt: self.Controller.setSimEpoch(dt.toPython()))
         setSimEpochLayout.addWidget(setSimEpochDatetime)
         self.addWidget(setSimEpochWidget)
 
@@ -58,19 +68,22 @@ class MainToolBar(QToolBar):
         setSimSpeedSpinBox.setDecimals(2)
         setSimSpeedSpinBox.setAccelerated(True) # arrow keys will change the value
         setSimSpeedSpinBox.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-        setSimSpeedSpinBox.valueChanged.connect(self.controller.setSimSpeed)
+        setSimSpeedSpinBox.valueChanged.connect(self.Controller.setSimSpeed)
         setSimSpeedLayout.addWidget(setSimSpeedSpinBox)
         self.addWidget(setSimSpeedWidget)
+
+        self.addAction('Toggle Orbits', self.Controller.toggleOrbit)
 
         addSatelliteWidget = QWidget()
         addSatelliteLayout = QHBoxLayout()
         addSatelliteWidget.setLayout(addSatelliteLayout)
-        addSatelliteLayout.addWidget(QLabel('Add Satellite:'))
+        addSatelliteLayout.addWidget(QLabel('Add:'))
         addSatelliteTextEdit = QLineEdit()  # Changed QTextEdit to QLineEdit
-        addSatelliteTextEdit.setPlaceholderText('Enter Satellite Number')
-        addSatelliteTextEdit.setMaxLength(5)
+        addSatelliteTextEdit.setPlaceholderText('Enter Query')
+        #addSatelliteTextEdit.setMaxLength(5)
         addSatelliteTextEdit.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-        addSatelliteTextEdit.editingFinished.connect(lambda: self.controller.addSatellite(int(addSatelliteTextEdit.text())))
+        addSatelliteTextEdit.editingFinished.connect(lambda: self.Controller.processQuery(addSatelliteTextEdit.text()))
         addSatelliteLayout.addWidget(addSatelliteTextEdit)
         self.addWidget(addSatelliteWidget)
 
+        self.Simulation.epochChanged.connect(lambda dt: setSimEpochDatetime.setDateTime(dt))

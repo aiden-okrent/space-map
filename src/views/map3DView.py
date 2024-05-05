@@ -14,30 +14,35 @@ from src.services.texture_service import TextureService  # Import the OpenGL wid
 
 
 class Map3DView(QOpenGLWidget):
-    def __init__(self, controller, parent, model):
+    def __init__(self, Controller, parent, Model):
         super().__init__(parent)
         self.parent = parent
-        self.controller = controller
-        self.model = model
+        self.Controller = Controller
+        self.Model3D = Model
+        self.Earth = Controller.Earth
+        self.Simulation = Controller.Simulation
         self.TextureService = TextureService()
 
         self.runtime = QTimer(self)
         self.runtime.timeout.connect(self.update)  # run 'onRuntime' when timer ends
 
+        earthRadius = self.Earth.radius.km
         self.camera = {
             'position': [0, 0, 0],
             'upVector': [0, 0, 1],
             'lookAt': [0, 0, 0],
             'phi': 0,
             'theta': 0,
-            'zoom': 5,
-            'maxZoom': 10,
-            'minZoom': .5,
+            'zoom': 5 * earthRadius,
+            'maxZoom': 10 * earthRadius,
+            'minZoom': .12 * earthRadius,
         }
 
         self.mouse = {
             'lastPos': QPoint(),
         }
+
+        self.Model3D.dataChanged.connect(self.update)
 
     def run(self):
         self.runtime.start(1000 / 60) # fps in milliseconds
@@ -48,7 +53,7 @@ class Map3DView(QOpenGLWidget):
         glViewport(0, 0, width, height)
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
-        gluPerspective(45, width / float(height), 0.1, 1000)
+        gluPerspective(45, width / float(height), 0.1, self.Earth.radius.km * 1000)
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
 
@@ -85,22 +90,36 @@ class Map3DView(QOpenGLWidget):
 
     def drawSphere(self, data):
         glActiveTexture(GL_TEXTURE0)
-        texture_id = self.model.getTexture(data['texture_key'])
-        glBindTexture(GL_TEXTURE_2D, texture_id)
 
-        glMatrixMode(GL_TEXTURE)
-        glLoadIdentity()
-        glTranslatef(*data['texture_offset'])
+        if data['texture'] is '':
+            glBindTexture(GL_TEXTURE_2D, 0)
+        else:
+            texture_id = self.Model3D.getTexture(data['texture'])
+            glBindTexture(GL_TEXTURE_2D, texture_id)
+
+            glMatrixMode(GL_TEXTURE)
+            if data['texture_offset'] is not None:
+                glLoadIdentity()
+                glTranslatef(*data['texture_offset'])
 
         glMatrixMode(GL_MODELVIEW)
-        glTranslatef(*data['translation'])
-        glRotatef(*data['rotation4f'])
-        glColor4f(*data['colorf4'])
+        glPushMatrix()
+        if data['translation'] is not None:
+            glTranslatef(*data['translation'])
+        if data['rotation4f'] is not None:
+            glRotatef(*data['rotation4f'])
+        if data['colorf4'] is not None:
+            glColor4f(*data['colorf4'])
+        else:
+            glColor4f(1, 1, 1, 1)
 
         quadric = gluNewQuadric()
         gluQuadricTexture(quadric, GL_TRUE)
         gluSphere(quadric, data['radius'], data['slices'], data['stacks'])
         gluDeleteQuadric(quadric)
+
+        glPopMatrix()
+        self.resetGLDefaults()
 
     def paintGL(self):
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -108,21 +127,21 @@ class Map3DView(QOpenGLWidget):
         self.resetGLDefaults()
         gluLookAt(*self.camera['position'], *self.camera['lookAt'], *self.camera['upVector'])
 
-        data = self.model.getData()
+        data = self.Model3D.data
         for light in data['lights']:
             self.drawLight(light)
         self.drawStars(data['stars'])
         self.drawLines(data['XYZAxis'])
 
         glPushMatrix()
-        self.applyRotation(data['rotations']['earthAxis'])
-        for sat in data['satellites']:
-            pass
-            #self.drawSatellite(sat.getData())
-            #self.drawOrbitalPath(sat.getData()['orbitalPath'])
+        self.applyRotation(data['rotations']['earth_Oblique'])
 
-        self.applyRotation(data['rotations']['GMST']) # Rotate the frame to the current GMST
-        self.drawEarth(data['earth'])
+        for sat in data['satellites']:
+            self.drawSatellite(sat.data)
+            self.drawOrbitalPath(sat.data['orbitalPath'])
+
+        self.applyRotation(data['rotations']['earth_Spin'])
+        self.drawSphere(data['earth'])
         self.drawCylinders(data['poles'])
         glPopMatrix()
 
@@ -185,21 +204,16 @@ class Map3DView(QOpenGLWidget):
         self.resetGLDefaults()
 
     def applyRotation(self, rotation):
-        glRotatef(rotation, 0, 0, 1)
-
-    def drawEarth(self, data):
-        #rotation = self.Earth.calculateRotation(self.controller.Timescale.now())
-        #glRotatef(rotation, 0, 1, 0)
-
-        self.drawSphere(data)
-        self.resetGLDefaults()
+        glRotatef(*rotation)
 
     def drawSatellite(self, data):
-        glTranslatef(*data['position'])
-
+        glDisable(GL_LIGHTING)
+        self.drawSphere(data['model'])
         self.resetGLDefaults()
 
     def drawOrbitalPath(self, data):
+        if not data['visible']:
+            return
         glDisable(GL_LIGHTING)
         glLineWidth(data['lineWidth'])
         glColor4f(*data['color4f'])
@@ -241,5 +255,5 @@ class Map3DView(QOpenGLWidget):
         self.updateCamera()
 
     def wheelEvent(self, event):
-        self.camera['zoom'] -= event.angleDelta().y() / 120
+        self.camera['zoom'] -= event.angleDelta().y() / 1200 * self.camera['zoom']
         self.updateCamera()

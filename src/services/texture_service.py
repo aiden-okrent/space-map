@@ -38,18 +38,18 @@ class TextureService:
             self.textures[imagePath] = texture
         return self.textures[imagePath]
 
-    def findTexturePath(self, quality: str, texture_key: str):
-        """Finds a texture path based on quality and texture_key."""
+    def findTexturePath(self, quality: str, texture: str):
+        """Finds a texture path based on quality and texture."""
         quality_dir = os.path.join(TEXTURE_DIR, quality)
         if os.path.exists(quality_dir):
             for texture_file in os.listdir(quality_dir):
-                if texture_file.startswith(texture_key):
+                if texture_file.startswith(texture):
                     return os.path.join(quality_dir, texture_file)
         return None
 
-    def getTexture(self, quality: str, texture_key: str):
+    def getTexture(self, quality: str, texture: str):
         """Finds a texture path, loads it if necessary, and returns the texture ID."""
-        texture_path = self.findTexturePath(quality, texture_key)
+        texture_path = self.findTexturePath(quality, texture)
         if texture_path:
             return self.loadTexture(texture_path)
         return None

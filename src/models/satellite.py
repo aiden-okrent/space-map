@@ -1,37 +1,68 @@
 import datetime
+from typing import TYPE_CHECKING
 
 import numpy as np
 from skyfield.api import EarthSatellite
 from skyfield.elementslib import osculating_elements_of
 from skyfield.timelib import Time
 
-from src.models.simulation import Simulation
+if TYPE_CHECKING:
+    from src.controllers.controller import ApplicationController
+    from src.models.simulation import Simulation
 
 
 class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
     """Custom Satellite class to extend the Skyfield EarthSatellite class with additional functionality.
     """
-    def __init__(self, line1, line2, name, **kwargs):
+
+    Controller: 'ApplicationController'
+    Simulation: 'Simulation'
+
+    def __init__(self, Controller: 'ApplicationController', line1: str, line2: str, name: str = None):
         super().__init__(line1, line2, name)
         self.name = name
         self.satnum = self.model.satnum
-        #self.sim = Simulation(self)
-        print("Satellite")
 
-        self.data = {
+        self.Controller = Controller
+        self.Simulation = Controller.Simulation
+
+        self.scale = Controller.Earth.scale
+
+        self._orbitVisible = True
+
+    @property
+    def data(self):
+        earthRadius = self.Controller.Earth.radius.km
+        position = self.at(self.Simulation.now_Time()).position.km * self.scale
+        return {
             'name': self.name,
             'satnum': self.satnum,
             'epoch': self.epoch.utc_datetime(),
-            'position': self.at(self.epoch).position.km,
-            'orbitalPath': {'vertices': self.orbitalPath(), 'color4f': [1.0, 1.0, 1.0, 1.0], 'lineWidth': 1.0},
+            'orbitalPath': {
+                'vertices': self.orbitalPath() * self.scale,
+                'color4f': [1.0, 0.0, 0.0, 0.3],
+                'lineWidth': 1.0,
+                'visible': self._orbitVisible
+                },
+            'position': position,
+            'model': {
+                'texture': '',
+                'translation': position,
+                'rotation4f': (0, 0, 0, 0),
+                'radius': .01 * earthRadius,
+                'slices': 8,
+                'stacks': 8,
+                'visible': True,
+                'colorf4': (1, 1, 1, 1)
+            },
         }
 
     def update(self, data):
         for key, value in data.items():
             setattr(self, key, value)
 
-    def getData(self):
-        return self.data.copy()
+    def setOrbitVisible(self, visible: bool):
+        self._orbitVisible = visible
 
     def epochValid_at(self, time: datetime.datetime, margin: int = 7) -> bool:
         """Check if the epoch of the satellite is valid at the given time with a given margin.
@@ -59,30 +90,9 @@ class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
             return False
         return True
 
-    def orbitalElements_at(self, time: Time) -> dict:
-        """Get the mean orbital elements of the satellite's orbit at the given time.
-
-        Returns:
-            dict: Dictionary containing the mean orbital elements of the satellite's orbit at the given time.
-        """
-        tleElements = { # basic elements incuded in the 2-line element set
-            'epoch': self.epoch.utc_datetime(),
-            'inclination': self.model.inclo,
-            'right_ascension': self.model.nodeo,
-            'eccentricity': self.model.ecco,
-            'argument_of_perigee': self.model.argpo,
-            'mean_anomaly': self.model.mo,
-            'mean_motion': self.model.no_kozai,
-            'revolution_number': self.model.revnum
-        }
-
-        sgp4Elements = osculating_elements_of(self.at(time), reference_frame=None, gm_km3_s2=None) # advanced elements calculated by SGP4
-
-        return {**tleElements, **sgp4Elements} # Merge the two dictionaries
-
     def orbitalPath(self) -> np.ndarray:
         # Calculate the elements of the osculating satellite's orbit
-        elements = osculating_elements_of(self.at(self.epoch), reference_frame=None, gm_km3_s2=None)
+        elements = osculating_elements_of(self.at(self.Simulation.now_Time()))
         a = elements.semi_major_axis.km
         e = elements.eccentricity
         i = elements.inclination.radians

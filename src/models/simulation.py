@@ -1,12 +1,20 @@
 import datetime
 from enum import Enum, auto
-from typing import Any, Dict, List, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union
 
 from dateutil import tz
 from matplotlib.pylab import f
-from PySide6.QtCore import QTimer, Slot
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from skyfield.api import load
 from skyfield.timelib import Time, Timescale
+
+from src.utilities.singleton import Singleton
+
+if TYPE_CHECKING:
+    from src.controllers.controller import ApplicationController
+    from src.models.earth import Earth
+
+from PySide6.QtCore import Signal
 
 
 class SimulationStatus(Enum):
@@ -18,17 +26,15 @@ class SimulationStatus(Enum):
     def __str__(self) -> str:
         return super().__str__().capitalize()
 
-class SimulationSingleton(type):
-    _instances: Dict[type, Any] = {}
+class Simulation(QObject):
+    epochChanged: Signal = Signal(datetime.datetime)
 
-    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
-        if cls not in cls._instances:
-            instance = super().__call__(*args, **kwargs)
-            cls._instances[cls] = instance
-        return cls._instances[cls]
+    Controller: 'ApplicationController'
+    Earth: 'Earth'
 
-class Simulation(metaclass=SimulationSingleton):
-    def __init__(self, controller=None) -> None:
+    def __init__(self, Controller: 'ApplicationController'):
+        super().__init__()
+        self.Controller = Controller
         self.status = SimulationStatus.STOPPED
         self.epoch = datetime.datetime.now(tz=tz.tzutc())
         self.speed = 1.0
@@ -58,27 +64,28 @@ class Simulation(metaclass=SimulationSingleton):
     def setSpeed(self, speed: float) -> None:
         self.speed = min(max(speed, -self.maxSpeed), self.maxSpeed)
         if self.status == SimulationStatus.RUNNING:
-            self.timer.setInterval(1000 / abs(self.speed) if self.speed != 0 else self.speed)
+            self.timer.setInterval(100 / abs(self.speed) if self.speed != 0 else self.speed)
 
     def loadEpoch(self, epoch: datetime.datetime) -> None:
         self.epoch = epoch
+        self.epochChanged.emit(self.epoch)
 
     def now_Time(self) -> Time:
-        return self.ts.utc(self.epoch)
+        return self.ts.utc(self.epoch.replace(tzinfo=tz.tzutc()))
 
     def now_datetime(self) -> datetime.datetime:
         return self.epoch
 
     @Slot()
     def _run(self) -> None:
-        time_increment = datetime.timedelta(seconds=(1 if self.speed >= 0 else -1))
+        time_increment = datetime.timedelta(milliseconds=(1 if self.speed >= 0 else -1))
         self.epoch += time_increment * abs(self.speed)
-        print(f"Running sim at {self.speed:.2f}x, Current Time={self._strftime()}  ", end="\r", flush=True)
+        self.epochChanged.emit(self.epoch)
 
     def _setStatus(self, newStatus: SimulationStatus) -> None:
         if self.status != newStatus:
             if newStatus == SimulationStatus.RUNNING and self.status in {SimulationStatus.STOPPED, SimulationStatus.PAUSED}:
-                self.timer.start(1000 / abs(self.speed))
+                self.timer.start(100 / abs(self.speed))
             self.status = newStatus
 
     def _strftime(self) -> str:
