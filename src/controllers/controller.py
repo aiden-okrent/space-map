@@ -1,8 +1,10 @@
 #
 import datetime
+import os
 from typing import TYPE_CHECKING, Any, Dict
 
 import keyboard
+from config.paths import TLE
 from dateutil import tz
 from PySide6.QtWidgets import QApplication
 
@@ -13,9 +15,13 @@ from src.models.simulation import Simulation
 from src.utilities.singleton import Singleton
 from src.views.mainView import MainView
 from src.views.map3DView import Map3DView
+from src.views.screen2DView import Screen2DView
 
 if TYPE_CHECKING:
     from src.models.satellite import Satellite
+
+import logging
+
 
 class ApplicationController(metaclass=Singleton):
 
@@ -31,16 +37,19 @@ class ApplicationController(metaclass=Singleton):
         self.MainView = MainView(self)
         self.Model3D = Model3D(self)
         self.Map3DView = Map3DView(self, self.MainView, self.Model3D)
+        self.Screen2DView = Screen2DView(self, self.MainView, self.Model3D, self.Map3DView)
 
         self.MainView.setCentralWidget(self.Map3DView)
+        self.windowTitle = self.MainView.windowTitle()
 
-        self.orbitsVisible = False
+        self.orbitsVisible = True
         self.satsHidden = False
 
     def run(self):
         self.MainView.restoreSettings()
         self.MainView.show()
 
+        #self.Screen2DView.run()
         self.Map3DView.run()
         self.Simulation.start()
 
@@ -57,12 +66,23 @@ class ApplicationController(metaclass=Singleton):
     def setSimEpoch(self, epoch: datetime.datetime):
         self.Simulation.loadEpoch(epoch)
 
+    def resetSimEpoch(self):
+        self.Simulation.setSpeed(1.0)
+        self.Simulation.resetEpoch()
+        for Satellite in self.Model3D.data['satellites']:
+            Satellite.updateCache()
+
     def getSimEpoch(self):
-        return self.Simulation.now_datetime()
+        return self.Simulation.now_datetime().astimezone(tz.tzlocal())
 
     def kill(self):
         self.Simulation.stop()
         self.app.quit()
+
+    def setQuality(self, quality: str):
+        self.Model3D.setQuality(quality)
+
+
 
     # Satellite Controls
     def addSatellite(self, satnum: int):
@@ -133,3 +153,6 @@ class ApplicationController(metaclass=Singleton):
                 self.removeSatellite(int(search))
             else:
                 self.removeSatellites(self.SatelliteFactory.getSatsBySearch(search))
+
+    def logFPS(self, fps: float):
+        self.MainView.setWindowTitle(f"{self.windowTitle} - {int(fps)} FPS")

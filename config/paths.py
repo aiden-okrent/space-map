@@ -14,3 +14,5 @@ TEXTURES = os.path.join(ASSETS, 'textures')
 
 DATA = os.path.join(BASE_PATH, 'data')
 TLE = os.path.join(DATA, 'tle')
+
+CONFIG = os.path.join(BASE_PATH, 'config')

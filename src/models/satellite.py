@@ -1,4 +1,5 @@
 import datetime
+import random
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,6 +12,8 @@ from utilities.math3D import normalize
 if TYPE_CHECKING:
     from src.controllers.controller import ApplicationController
     from src.models.simulation import Simulation
+
+from datetime import timedelta
 
 
 class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
@@ -33,6 +36,11 @@ class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
         self._orbitVisible = True
         self._hidden = False
 
+        self.lastDataUpdateTime = None
+        self.dataCache = None
+        self.dataCacheInterval = timedelta(seconds=1)
+        self.dataUpdateDelay = timedelta(milliseconds=random.randint(0, 500))
+
     @property # basic info about the satellite
     def infoData(self):
         return {
@@ -42,22 +50,26 @@ class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
             'hidden': self._hidden
         }
 
-    @property # data used for rendering the satellite's position and path
+    @property
     def renderData(self):
+        # Check if cache needs updating
+        if self.lastDataUpdateTime is None or (self.Simulation.now_datetime() - self.lastDataUpdateTime) > self.dataCacheInterval + self.dataUpdateDelay:
+            self.updateCache()
+        return self.dataCache
+
+    def updateCache(self):
         earthRadius = self.Controller.Earth.radius.km
         at = self.at(self.Simulation.now_Time())
         position = at.position.km * self.scale
         altitude = (at.distance().km * self.scale) - earthRadius
-        subposition = self.getSubposition_at(self.Simulation.now_Time())
-        return {
+        self.dataCache = {
             'orbitalPath': {
                 'vertices': self.orbitalPath() * self.scale,
                 'color4f': [1.0, 0.0, 0.0, 0.3],
                 'lineWidth': 1.0,
                 'visible': self._orbitVisible
-                },
+            },
             'position': position,
-            'subposition': subposition,
             'model': {
                 'texture': '',
                 'translation': position,
@@ -73,22 +85,21 @@ class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
                 'visible': True,
                 'lines': [
                     {
-                    'color4f': (0.5, 0.5, 0.5, 1),
-                    'vertices': [[0, 0, 0], normalize(position)],
-                    'length': altitude,
-                    'translation': position - (normalize(position) * altitude),
-                    'rotation4f': (0, 0, 1, 0)
+                        'color4f': (0.5, 0.5, 0.5, 1),
+                        'vertices': [[0, 0, 0], normalize(position)],
+                        'length': altitude,
+                        'translation': position - (normalize(position) * altitude),
+                        'rotation4f': (0, 0, 1, 0)
                     }
                 ]
             }
         }
-
-
-
+        self.lastDataUpdateTime = self.Simulation.now_datetime()
 
     def update(self, data):
         for key, value in data.items():
             setattr(self, key, value)
+        self.updateCache()
 
     def getSubposition_at(self, time: Time) -> np.ndarray:
 
@@ -100,9 +111,11 @@ class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
 
     def setHidden(self, hidden: bool):
         self._hidden = hidden
+        self.updateCache()
 
     def setOrbitVisibility(self, visible: bool):
         self._orbitVisible = visible
+        self.updateCache()
 
     def epochValid_at(self, time: datetime.datetime, margin: int = 7) -> bool:
         """Check if the epoch of the satellite is valid at the given time with a given margin.

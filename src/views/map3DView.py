@@ -1,5 +1,7 @@
 #
+import time
 from cgitb import text
+from typing import TYPE_CHECKING
 
 import numpy as np
 from line_profiler import LineProfiler
@@ -12,9 +14,19 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from src.models.satellite import Satellite
 from src.services.texture_service import TextureService  # Import the OpenGL widget
 
+if TYPE_CHECKING:
+    from src.controllers.controller import ApplicationController
+    from src.models.earth import Earth
+    from src.models.simulation import Simulation
+
 
 class Map3DView(QOpenGLWidget):
-    def __init__(self, Controller, parent, Model):
+
+    Controller: 'ApplicationController'
+    Earth: 'Earth'
+    Simulation: 'Simulation'
+
+    def __init__(self, Controller: 'ApplicationController', parent, Model):
         super().__init__(parent)
         self.parent = parent
         self.Controller = Controller
@@ -23,8 +35,9 @@ class Map3DView(QOpenGLWidget):
         self.Simulation = Controller.Simulation
         self.TextureService = TextureService()
 
-        self.runtime = QTimer(self)
-        self.runtime.timeout.connect(self.update)  # run 'onRuntime' when timer ends
+        self.frameCount = 0
+        self.lastFrameTime = 0
+        self.fps = 0
 
         earthRadius = self.Earth.radius.km
         self.camera = {
@@ -42,6 +55,8 @@ class Map3DView(QOpenGLWidget):
             'lastPos': QPoint(),
         }
 
+        self.runtime = QTimer(self)
+        self.runtime.timeout.connect(self.update)  # run 'onRuntime' when timer ends
         self.Model3D.dataChanged.connect(self.update)
 
     def run(self):
@@ -58,7 +73,21 @@ class Map3DView(QOpenGLWidget):
         glLoadIdentity()
 
     def initializeGL(self):
+        self.startFPSCounter()
         self.resetGLDefaults()
+
+    def startFPSCounter(self):
+        self.lastFrameTime = time.time()
+
+    def updateFPS(self):
+        self.frameCount += 1
+        currentTime = time.time()
+        elapsedTime = currentTime - self.lastFrameTime
+        if elapsedTime >= 1.0:
+            self.fps = self.frameCount / elapsedTime
+            self.frameCount = 0
+            self.lastFrameTime = currentTime
+            self.Controller.logFPS(self.fps)
 
     def resetGLDefaults(self):
         glEnable(GL_DEPTH_TEST)
@@ -81,6 +110,38 @@ class Map3DView(QOpenGLWidget):
         glEnable(GL_LINE_SMOOTH)
 
         self.updateCamera()
+
+    def paintGL(self):
+
+        self.updateFPS()
+
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glLoadIdentity()
+        self.resetGLDefaults()
+        gluLookAt(*self.camera['position'], *self.camera['lookAt'], *self.camera['upVector'])
+
+        data = self.Model3D.data
+        for light in data['lights']:
+            self.drawLight(light)
+        self.drawStars(data['stars'])
+        self.drawLines(data['XYZAxis'])
+
+        glPushMatrix()
+        self.applyRotation(data['rotations']['earth_Oblique'])
+
+        for sat in data['satellites']:
+            if sat.infoData['hidden']:
+                continue
+            renderData = sat.renderData
+            self.drawSatellite(renderData)
+            self.drawLines(renderData['toSurface'])
+            self.drawOrbitalPath(renderData['orbitalPath'])
+
+        self.applyRotation(data['rotations']['earth_Spin'])
+        self.drawSphere(data['earth'])
+        self.drawCylinders(data['poles'])
+        glPopMatrix()
+
 
     def drawLight(self, light):
         glLightfv(GL_LIGHT0, GL_POSITION, light['translation'])
@@ -120,34 +181,6 @@ class Map3DView(QOpenGLWidget):
 
         glPopMatrix()
         self.resetGLDefaults()
-
-    def paintGL(self):
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glLoadIdentity()
-        self.resetGLDefaults()
-        gluLookAt(*self.camera['position'], *self.camera['lookAt'], *self.camera['upVector'])
-
-        data = self.Model3D.data
-        for light in data['lights']:
-            self.drawLight(light)
-        self.drawStars(data['stars'])
-        self.drawLines(data['XYZAxis'])
-
-        glPushMatrix()
-        self.applyRotation(data['rotations']['earth_Oblique'])
-
-        for sat in data['satellites']:
-            if sat.infoData['hidden']:
-                continue
-            renderData = sat.renderData
-            self.drawSatellite(renderData)
-            self.drawLines(renderData['toSurface'])
-            self.drawOrbitalPath(renderData['orbitalPath'])
-
-        self.applyRotation(data['rotations']['earth_Spin'])
-        self.drawSphere(data['earth'])
-        self.drawCylinders(data['poles'])
-        glPopMatrix()
 
     def updateCamera(self):
         self.camera['phi'] = max(min(self.camera['phi'], 89), -89)

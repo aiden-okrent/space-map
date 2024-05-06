@@ -27,6 +27,7 @@ class Model3D(QObject):
         self.Simulation = Controller.Simulation
 
         self.TextureService = TextureService()
+        self.quality = 'low'
 
         self._satellites = []
 
@@ -40,7 +41,7 @@ class Model3D(QObject):
             ],
             'stars': {
                 'texture': 'stars',
-                'texture_quality': 'low',
+                'texture_quality': self.quality,
                 'texture_offset': (0, 0, 0),
                 'translation': (0, 0, 0),
                 'rotation4f': (0, 0, 0, 1),
@@ -56,7 +57,7 @@ class Model3D(QObject):
             },
             'earth': {
                 'texture': 'earth',
-                'texture_quality': 'low',
+                'texture_quality': self.quality,
                 'texture_offset': (0.75, 0, 0),
                 'translation': (0, 0, 0),
                 'rotation4f': (0, 0, 0, 0),
@@ -150,4 +151,8 @@ class Model3D(QObject):
     def getTexture(self, key):
         item = self.data[key]
         return self.TextureService.getTexture(item['texture_quality'], item['texture'])
+
+    def setQuality(self, quality):
+        self.quality = quality
+        self.dataChanged.emit()
 

@@ -38,22 +38,28 @@ class MainToolBar(QToolBar):
         self.addTools()
 
     def addTools(self):
-        self.addAction('Start', self.Controller.startSim)
-        self.addAction('Stop', self.Controller.stopSim)
-
+        timeSetProgramatically = False
         setSimEpochWidget = QWidget()
         setSimEpochLayout = QHBoxLayout()
         setSimEpochWidget.setLayout(setSimEpochLayout)
-        setSimEpochLayout.addWidget(QLabel('Epoch:'))
+        setSimEpochLayout.addWidget(QLabel('Time:'))
         setSimEpochDatetime = QDateTimeEdit()
         setSimEpochDatetime.setDisplayFormat('MMMM d, yyyy h:mm:ss AP')
         setSimEpochDatetime.setCalendarPopup(True)
+        setSimEpochDatetime.setTimeZone(QDateTime().currentDateTime().timeZone())
         setSimEpochDatetime.setDateTimeRange(QDateTime(1957, 10, 4, 0, 0, 0), QDateTime(2056, 10, 4, 0, 0, 0)) # TLE max epoch range
-        setSimEpochDatetime.setDateTime(self.Controller.getSimEpoch())
+
+        setSimEpochDatetime.setReadOnly(True) # temp until we have a way to set the time
+
+        def handleSimEpochSet(dt):
+            global timeSetProgramatically
+            timeSetProgramatically = True
+            setSimEpochDatetime.setDateTime(QDateTime(dt.astimezone().date(), dt.astimezone().time()))
+
         setSimEpochDatetime.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-        setSimEpochDatetime.setButtonSymbols(QDateTimeEdit.ButtonSymbols.UpDownArrows)
+        setSimEpochDatetime.setButtonSymbols(QDateTimeEdit.ButtonSymbols.PlusMinus)
         setSimEpochDatetime.setStyleSheet('QDateTimeEdit { padding: 0px; }')
-        setSimEpochDatetime.dateTimeChanged.connect(lambda dt: self.Controller.setSimEpoch(dt.toPython()))
+
         setSimEpochLayout.addWidget(setSimEpochDatetime)
         self.addWidget(setSimEpochWidget)
 
@@ -71,9 +77,6 @@ class MainToolBar(QToolBar):
         setSimSpeedSpinBox.valueChanged.connect(self.Controller.setSimSpeed)
         setSimSpeedLayout.addWidget(setSimSpeedSpinBox)
         self.addWidget(setSimSpeedWidget)
-
-        self.addAction('Toggle Orbits', lambda: self.Controller.toggleOrbitVisibility())
-        self.addAction('Toggle Hidden', lambda: self.Controller.toggleHidden())
 
         addSatelliteWidget = QWidget()
         addSatelliteLayout = QHBoxLayout()
@@ -98,4 +101,5 @@ class MainToolBar(QToolBar):
         removeSatelliteLayout.addWidget(removeSatelliteTextEdit)
         self.addWidget(removeSatelliteWidget)
 
-        self.Simulation.epochChanged.connect(lambda dt: setSimEpochDatetime.setDateTime(dt))
+        self.Simulation.epochChanged.connect(lambda dt: handleSimEpochSet(dt))
+        self.Simulation.speedChanged.connect(lambda speed: setSimSpeedSpinBox.setValue(speed))

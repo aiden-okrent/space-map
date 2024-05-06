@@ -28,6 +28,8 @@ class SimulationStatus(Enum):
 
 class Simulation(QObject):
     epochChanged: Signal = Signal(datetime.datetime)
+    epochReset: Signal = Signal(datetime.datetime)
+    speedChanged: Signal = Signal(float)
 
     Controller: 'ApplicationController'
     Earth: 'Earth'
@@ -64,11 +66,15 @@ class Simulation(QObject):
     def setSpeed(self, speed: float) -> None:
         self.speed = min(max(speed, -self.maxSpeed), self.maxSpeed)
         if self.status == SimulationStatus.RUNNING:
-            self.timer.setInterval(1000 / abs(self.speed) if self.speed != 0 else self.speed)
+            self.timer.setInterval(100 / abs(self.speed) if self.speed != 0 else self.speed)
+        self.speedChanged.emit(self.speed)
 
     def loadEpoch(self, epoch: datetime.datetime) -> None:
-        self.epoch = epoch
-        self.epochChanged.emit(self.epoch)
+        self.epoch = epoch.replace(tzinfo=tz.tzutc())
+
+    def resetEpoch(self) -> None:
+        self.epoch = datetime.datetime.now(tz=tz.tzutc())
+        self.epochReset.emit(self.epoch)
 
     def now_Time(self) -> Time:
         return self.ts.utc(self.epoch.replace(tzinfo=tz.tzutc()))
@@ -76,16 +82,19 @@ class Simulation(QObject):
     def now_datetime(self) -> datetime.datetime:
         return self.epoch
 
+    def now_localtime(self) -> datetime.datetime:
+        return self.epoch.replace(tzinfo=tz.tzlocal())
+
     @Slot()
     def _run(self) -> None:
-        time_increment = datetime.timedelta(seconds=(1 if self.speed >= 0 else -1))
+        time_increment = datetime.timedelta(milliseconds=(100 if self.speed >= 0 else -1))
         self.epoch += time_increment * abs(self.speed)
         self.epochChanged.emit(self.epoch)
 
     def _setStatus(self, newStatus: SimulationStatus) -> None:
         if self.status != newStatus:
             if newStatus == SimulationStatus.RUNNING and self.status in {SimulationStatus.STOPPED, SimulationStatus.PAUSED}:
-                self.timer.start(1000 / abs(self.speed))
+                self.timer.start(100 / abs(self.speed))
             self.status = newStatus
 
     def _strftime(self) -> str:
