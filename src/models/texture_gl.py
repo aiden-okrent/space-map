@@ -1,42 +1,44 @@
 #
 import os
-
 from config.paths import TEXTURES
-from OpenGL.GL import *
+from OpenGL import GL
 from PySide6.QtGui import QImage
 
 
-class TextureService:
-    """ Texture Service Class, responsible for retrieving and unpacking loading textures for 3D rendering."""
+class TexturesGL:
+    """TexturesGL Class, responsible for retrieving and unpacking loading textures for 3D rendering."""
+
     def __init__(self):
         self.textures = {}
 
     def loadTexture(self, imagePath):
         """Bind a texture from an image file."""
         if imagePath not in self.textures:
-            texture = glGenTextures(1)
-            glBindTexture(GL_TEXTURE_2D, texture)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+            GL.glMatrixMode(GL.GL_TEXTURE)
+            texture = GL.glGenTextures(1)
+            GL.glBindTexture(GL.GL_TEXTURE_2D, texture)
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_REPEAT)
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_REPEAT)
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR)
+            GL.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR)
             image = QImage(imagePath)
             image = image.convertToFormat(QImage.Format.Format_RGBA8888)
             image = image.mirrored(False, True)
-            glTexImage2D(
-                GL_TEXTURE_2D,
+            GL.glTexImage2D(
+                GL.GL_TEXTURE_2D,
                 0,
-                GL_RGBA,
+                GL.GL_RGBA,
                 image.width(),
                 image.height(),
                 0,
-                GL_RGBA,
-                GL_UNSIGNED_BYTE,
-                image.bits()
+                GL.GL_RGBA,
+                GL.GL_UNSIGNED_BYTE,
+                image.bits(),
             )
-            print(f"Loading texture: {imagePath}")
+            GL.glMatrixMode(GL.GL_MODELVIEW)
+
             self.textures[imagePath] = texture
-        return self.textures[imagePath]
+        return texture
 
     def findTexturePath(self, quality: str, texture: str):
         """Finds a texture path based on quality and texture."""

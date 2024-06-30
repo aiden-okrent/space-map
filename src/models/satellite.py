@@ -6,8 +6,11 @@ import numpy as np
 from skyfield.api import EarthSatellite
 from skyfield.elementslib import osculating_elements_of
 from skyfield.timelib import Time
+from PySide6.QtCore import Qt
 
-from utilities.math3D import normalize
+from src.services.icon_service import IconService
+from src.models.object3D import Object3D
+from src.utilities.math3D import normalize
 
 if TYPE_CHECKING:
     from src.controllers.controller import ApplicationController
@@ -15,59 +18,59 @@ if TYPE_CHECKING:
 
 from datetime import timedelta
 
-
-class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
+class Satellite(EarthSatellite, Object3D):
     """Custom Satellite class to extend the Skyfield EarthSatellite class with additional functionality.
     """
 
     Controller: 'ApplicationController'
     Simulation: 'Simulation'
 
-    def __init__(self, Controller: 'ApplicationController', line1: str, line2: str, name: str = None):
-        super().__init__(line1, line2, name)
-        self.name = name
-        self.satnum = self.model.satnum
+    def __init__(self, parent, Controller: 'ApplicationController', line1: str, line2: str, name: str = None):
+        Object3D.__init__(self, parent)
+        EarthSatellite.__init__(self, line1, line2, name)
 
         self.Controller = Controller
-        self.Simulation = Controller.Simulation
+        self.Simulation = Controller.sim
 
-        self.scale = Controller.Earth.scale
-
-        self._orbitVisible = True
+        self.satnum = self.model.satnum
+        self.icon = IconService().getIcon('gis--satellite.svg', Qt.GlobalColor.white)
         self._hidden = False
-
         self.lastDataUpdateTime = None
         self.dataCache = None
         self.dataCacheInterval = timedelta(seconds=1)
         self.dataUpdateDelay = timedelta(milliseconds=random.randint(0, 500))
 
-    @property # basic info about the satellite
+        # temporary
+        earthRadius = self.Controller.model.earth.radius.km
+        at = self.at(self.Simulation.now_Time())
+        position = at.position.km * self.Controller.model.earth.scale_factor
+        altitude = (at.distance().km * self.Controller.model.earth.scale_factor) - earthRadius
+        self.translate(*position)
+
+    @property
     def infoData(self):
         return {
-            'name': self.name,
-            'satnum': int(self.satnum),
-            'epoch': self.epoch.utc_datetime(),
-            'hidden': self._hidden
+            'hidden': self._hidden,
         }
 
     @property
-    def renderData(self):
-        # Check if cache needs updating
+    def renderData(self): # Check if cache needs updating
         if self.lastDataUpdateTime is None or (self.Simulation.now_datetime() - self.lastDataUpdateTime) > self.dataCacheInterval + self.dataUpdateDelay:
             self.updateCache()
         return self.dataCache
 
     def updateCache(self):
-        earthRadius = self.Controller.Earth.radius.km
+        earthRadius = self.Controller.model.earth.radius.km
         at = self.at(self.Simulation.now_Time())
-        position = at.position.km * self.scale
-        altitude = (at.distance().km * self.scale) - earthRadius
+        position = at.position.km * self.Controller.model.earth.scale_factor
+        altitude = (at.distance().km * self.Controller.model.earth.scale_factor) - earthRadius
+
         self.dataCache = {
             'orbitalPath': {
-                'vertices': self.orbitalPath() * self.scale,
+                'vertices': self.orbitalPath() * self.Controller.model.earth.scale_factor,
                 'color4f': [1.0, 0.0, 0.0, 0.3],
                 'lineWidth': 1.0,
-                'visible': self._orbitVisible
+                'visible': True
             },
             'position': position,
             'model': {
@@ -111,6 +114,7 @@ class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
 
     def setHidden(self, hidden: bool):
         self._hidden = hidden
+        self.label.setVisible(not hidden)
         self.updateCache()
 
     def setOrbitVisibility(self, visible: bool):
@@ -118,15 +122,7 @@ class Satellite(EarthSatellite): # Inherit from skyfield's EarthSatellite class
         self.updateCache()
 
     def epochValid_at(self, time: datetime.datetime, margin: int = 7) -> bool:
-        """Check if the epoch of the satellite is valid at the given time with a given margin.
-
-        Args:
-            datetime (datetime.datetime): Time to check if the epoch is valid at.
-            margin (int, optional): Number of days before and after the epoch to consider valid. Defaults to 7.
-
-        Returns:
-            bool: True if the epoch is valid at the given time, False otherwise.
-        """
+        # Check if the time is within the epoch of the satellite
         if isinstance(time, Time):
             time = time.utc_datetime()
         elif isinstance(time, datetime.datetime):

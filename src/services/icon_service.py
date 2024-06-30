@@ -8,13 +8,11 @@ from PySide6.QtSvg import QSvgRenderer
 
 
 class IconService:
-    """ Icon Service Class, responsible for retrieving and unpacking svg icons for the application."""
-    def __init__(self) -> None:
-        pass
+    """Icon Service Class, responsible for retrieving and unpacking svg icons for the application."""
 
     def getIcon(self, name: str, color: Qt.GlobalColor):
-        """ Returns a QIcon object from a svg file in the 'assets\icons' directory."""
-        svg = os.path.join(ASSETS, 'icons', name)
+        """Returns a QIcon object from a svg file in the 'assets\icons' directory."""
+        svg = os.path.join(ASSETS, "icons", name)
         if not os.path.exists(svg):
             return None
         return self.build(svg, color)

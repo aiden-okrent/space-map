@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 from config.paths import TLE
 
 from src.models.satellite import Satellite
+from src.models.object3D import Object3D
 
 
 class SatelliteFactory:
@@ -22,8 +23,7 @@ class SatelliteFactory:
     def __init__(self, Controller: 'ApplicationController'):
         super().__init__()
         self.Controller = Controller
-        if not os.path.exists(TLE):
-            os.makedirs(TLE)
+        self.model = Controller.model
 
     def getPath(self, satnum):
         """Get the path to the TLE file for a given satnum.
@@ -123,31 +123,29 @@ class SatelliteFactory:
                 else:
                     return tle_data
 
-    def listDirSatnums(self):
+    def listDir(self):
         """List all Catalog IDs of satellites with TLE files in the TLE directory.
 
         Returns:
             list: List of Catalog IDs of satellites with TLE files.
         """
-        satnums = []
+        satnums = [int()]
         for filename in os.listdir(TLE):
-            satnums.append(filename.replace(".tle", ""))
+            satnum = filename.replace(".tle", "")
+            satnums.append(int(satnum))
         return satnums
 
-    def getSatsBySearch(self, search: str):
-        """Search for satellites by opening TLE files and checking for the search term in the first line.
-        """
-        print("Searching for satellites with search term: " + search)
-        satnums = []
-        for filename in os.listdir(TLE):
-            tle_data = self.openTLE(os.path.join(TLE, filename))
-            if tle_data:
-                if search in tle_data[0]:
-                    satnums.append(filename.replace(".tle", ""))
-                    print("Found satellite with search term: " + search + " in file: " + filename)
+    def searchDir(self, text: str):
+        if text == "":
+            return None
+
+        if text.isdigit():
+            satnums = [int(filename.replace(".tle", "")) for filename in os.listdir(TLE) if text == filename.replace(".tle", "")]
+        else:
+            satnums = [int(filename.replace(".tle", "")) for filename in os.listdir(TLE) if text.lower() in open(os.path.join(TLE, filename)).read().lower()]
+        satnums = [int(text)] if satnums == [] else satnums
+
         return satnums
-
-
 
     '''
     CURTIS
@@ -166,6 +164,7 @@ class SatelliteFactory:
             Satellite: The Satellite object created from the TLE data.
         """
 
+        print("Building Satellite object for Catalog ID: " + str(satnum))
         if not satnum:
             print("No satnum provided.")
             return None
@@ -179,12 +178,12 @@ class SatelliteFactory:
             tle_data = self.openTLE(path)
 
         if not tle_data == None:
-            satellite = Satellite(Controller=self.Controller, line1=tle_data[1], line2=tle_data[2], name=tle_data[0].strip())
+            satellite = Satellite(parent=self.model.eci, Controller=self.Controller, line1=tle_data[1], line2=tle_data[2], name=tle_data[0].strip())
             print("Satellite built with Catalog ID: " + str(satnum))
             if not satellite.epochValid_at(datetime.datetime.now()):
                 print("Epoch is invalid for satellite with catalog ID: " + str(satnum), "within a margin of " + str(14), "days. Requesting fresh TLE data.")
                 tle_data = self.fetchTLE(satnum)
-                satellite = Satellite(Controller=self.Controller, line1=tle_data[1], line2=tle_data[2], name=tle_data[0].strip())
+                satellite = Satellite(parent=self.model.eci, Controller=self.Controller, line1=tle_data[1], line2=tle_data[2], name=tle_data[0].strip())
             return satellite
         else:
             print("Failed to build Satellite object for Catalog ID: " + str(satnum), "because the TLE data returned None.")
